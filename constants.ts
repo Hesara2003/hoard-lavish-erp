@@ -101,8 +101,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 8, 'b2': 4 },
     minStockLevel: 5,
     sku: 'DRS-001',
-    description: 'A luxurious velvet gown in deep midnight blue, perfect for evening galas.',
-    imageUrl: 'https://picsum.photos/400/400?random=1'
+    description: 'A luxurious velvet gown in deep midnight blue, perfect for evening galas.'
   },
   {
     id: '2',
@@ -115,8 +114,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 15, 'b2': 10 },
     minStockLevel: 10,
     sku: 'SHO-002',
-    description: 'Handcrafted Italian leather loafers with a classic finish.',
-    imageUrl: 'https://picsum.photos/400/400?random=2'
+    description: 'Handcrafted Italian leather loafers with a classic finish.'
   },
   {
     id: '3',
@@ -129,8 +127,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 30, 'b2': 20 },
     minStockLevel: 15,
     sku: 'ACC-003',
-    description: '100% pure silk scarf with intricate floral patterns.',
-    imageUrl: 'https://picsum.photos/400/400?random=3'
+    description: '100% pure silk scarf with intricate floral patterns.'
   },
   {
     id: '4',
@@ -143,8 +140,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 2, 'b2': 1 },
     minStockLevel: 5,
     sku: 'COT-004',
-    description: 'Beige cashmere blend trench coat, suitable for all seasons.',
-    imageUrl: 'https://picsum.photos/400/400?random=4'
+    description: 'Beige cashmere blend trench coat, suitable for all seasons.'
   },
   {
     id: '5',
@@ -157,8 +153,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 20, 'b2': 10 },
     minStockLevel: 8,
     sku: 'ACC-005',
-    description: 'Minimalist gold plated cufflinks for formal attire.',
-    imageUrl: 'https://picsum.photos/400/400?random=5'
+    description: 'Minimalist gold plated cufflinks for formal attire.'
   },
   {
     id: '6',
@@ -171,8 +166,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 10, 'b2': 5 },
     minStockLevel: 5,
     sku: 'BAG-006',
-    description: 'Durable structured tote with ample space for daily essentials.',
-    imageUrl: 'https://picsum.photos/400/400?random=6'
+    description: 'Durable structured tote with ample space for daily essentials.'
   },
 ];
 

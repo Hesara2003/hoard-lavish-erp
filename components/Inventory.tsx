@@ -6,10 +6,10 @@ import { Product } from '../types';
 type InventoryTab = 'ALL' | 'LOW_STOCK' | 'ADJUSTMENTS' | 'CATEGORIES';
 
 const Inventory: React.FC = () => {
-  const { 
+  const {
     products, categories, brands, stockHistory, currentBranch,
     addProduct, updateProduct, deleteProduct, adjustStock,
-    addCategory, removeCategory, addBrand, removeBrand 
+    addCategory, removeCategory, addBrand, removeBrand
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<InventoryTab>('ALL');
@@ -20,7 +20,7 @@ const Inventory: React.FC = () => {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
-  
+
   // Stock Adjustment State
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
   const [adjustmentType, setAdjustmentType] = useState<'IN' | 'OUT' | 'ADJUSTMENT'>('IN');
@@ -33,15 +33,15 @@ const Inventory: React.FC = () => {
     if (activeTab === 'LOW_STOCK') {
       result = result.filter(p => (p.branchStock[currentBranch.id] || 0) <= p.minStockLevel);
     }
-    
+
     if (filterCategory !== 'All') {
       result = result.filter(p => p.category === filterCategory);
     }
 
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
-      result = result.filter(p => 
-        p.name.toLowerCase().includes(lower) || 
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(lower) ||
         p.sku.toLowerCase().includes(lower) ||
         p.brand.toLowerCase().includes(lower)
       );
@@ -83,7 +83,6 @@ const Inventory: React.FC = () => {
       addProduct({
         ...productData,
         id: Math.random().toString(36).substr(2, 9),
-        imageUrl: productData.imageUrl || `https://picsum.photos/400/400?random=${Math.floor(Math.random() * 1000)}`
       });
     }
     setIsProductModalOpen(false);
@@ -111,8 +110,8 @@ const Inventory: React.FC = () => {
     <button
       onClick={() => setActiveTab(id)}
       className={`flex items-center gap-2 px-4 py-2 border-b-2 font-medium text-sm transition-colors
-        ${activeTab === id 
-          ? 'border-slate-900 text-slate-900' 
+        ${activeTab === id
+          ? 'border-slate-900 text-slate-900'
           : 'border-transparent text-slate-500 hover:text-slate-700'}`}
     >
       <Icon size={16} />
@@ -139,14 +138,14 @@ const Inventory: React.FC = () => {
             </div>
             <p className="text-sm text-slate-500">Manage products and stock levels for this branch.</p>
           </div>
-          <button 
+          <button
             onClick={handleOpenAdd}
             className="bg-slate-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium"
           >
             <Plus size={16} /> Add Product
           </button>
         </div>
-        
+
         <div className="flex gap-4 overflow-x-auto">
           <TabButton id="ALL" label="All Products" icon={Box} />
           <TabButton id="LOW_STOCK" label="Low Stock Alerts" icon={AlertCircle} />
@@ -157,21 +156,21 @@ const Inventory: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-6">
-        
+
         {/* FILTERS for Lists */}
         {(activeTab === 'ALL' || activeTab === 'LOW_STOCK') && (
           <div className="flex gap-4 mb-6">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Search by name, SKU, or brand..." 
+              <input
+                type="text"
+                placeholder="Search by name, SKU, or brand..."
                 className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
             </div>
-            <select 
+            <select
               className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none bg-white text-slate-600"
               value={filterCategory}
               onChange={e => setFilterCategory(e.target.value)}
@@ -203,7 +202,6 @@ const Inventory: React.FC = () => {
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 group">
                       <td className="p-4 flex items-center gap-3">
-                        <img src={p.imageUrl} className="w-10 h-10 rounded object-cover bg-slate-100" />
                         <div>
                           <div className="font-medium text-slate-900">{p.name}</div>
                           {branchStock <= p.minStockLevel && (
@@ -220,11 +218,10 @@ const Inventory: React.FC = () => {
                       <td className="p-4 text-right font-medium text-slate-900">${p.price.toFixed(2)}</td>
                       <td className="p-4 text-center">
                         <div className="flex flex-col items-center">
-                          <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            branchStock === 0 ? 'bg-red-100 text-red-700' :
-                            branchStock <= p.minStockLevel ? 'bg-amber-100 text-amber-700' :
-                            'bg-green-100 text-green-700'
-                          }`}>
+                          <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${branchStock === 0 ? 'bg-red-100 text-red-700' :
+                              branchStock <= p.minStockLevel ? 'bg-amber-100 text-amber-700' :
+                                'bg-green-100 text-green-700'
+                            }`}>
                             {branchStock}
                           </div>
                           <span className="text-[10px] text-slate-400 mt-1">Total: {p.stock}</span>
@@ -232,21 +229,21 @@ const Inventory: React.FC = () => {
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
+                          <button
                             onClick={() => handleOpenAdjustment(p)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" 
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                             title="Adjust Stock"
                           >
                             <History size={16} />
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleOpenEdit(p)}
                             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded"
                             title="Edit"
                           >
                             <Edit2 size={16} />
                           </button>
-                          <button 
+                          <button
                             onClick={() => deleteProduct(p.id)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
                             title="Delete"
@@ -290,7 +287,7 @@ const Inventory: React.FC = () => {
                     <td className="p-4 text-slate-600 text-xs">{log.branchName}</td>
                     <td className="p-4">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold
-                        ${log.type === 'IN' ? 'bg-green-100 text-green-700' : 
+                        ${log.type === 'IN' ? 'bg-green-100 text-green-700' :
                           log.type === 'OUT' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                         {log.type === 'IN' && <ArrowDownRight size={12} />}
                         {log.type === 'OUT' && <ArrowUpRight size={12} />}
@@ -317,10 +314,10 @@ const Inventory: React.FC = () => {
               <h3 className="font-bold text-lg mb-4 text-slate-800">Product Categories</h3>
               <div className="flex gap-2 mb-4">
                 <input id="newCat" type="text" placeholder="New Category" className="flex-1 p-2 border border-slate-200 rounded-lg text-sm" />
-                <button 
+                <button
                   onClick={() => {
                     const input = document.getElementById('newCat') as HTMLInputElement;
-                    if(input.value) { addCategory(input.value); input.value = ''; }
+                    if (input.value) { addCategory(input.value); input.value = ''; }
                   }}
                   className="bg-slate-900 text-white px-4 rounded-lg text-sm"
                 >Add</button>
@@ -340,10 +337,10 @@ const Inventory: React.FC = () => {
               <h3 className="font-bold text-lg mb-4 text-slate-800">Brands</h3>
               <div className="flex gap-2 mb-4">
                 <input id="newBrand" type="text" placeholder="New Brand" className="flex-1 p-2 border border-slate-200 rounded-lg text-sm" />
-                <button 
+                <button
                   onClick={() => {
                     const input = document.getElementById('newBrand') as HTMLInputElement;
-                    if(input.value) { addBrand(input.value); input.value = ''; }
+                    if (input.value) { addBrand(input.value); input.value = ''; }
                   }}
                   className="bg-slate-900 text-white px-4 rounded-lg text-sm"
                 >Add</button>
@@ -369,47 +366,47 @@ const Inventory: React.FC = () => {
               <h3 className="font-bold text-slate-800">{editingProduct.id ? 'Edit Product' : 'New Product'}</h3>
               <button onClick={() => setIsProductModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-6 grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Product Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-900 outline-none"
                   value={editingProduct.name || ''}
-                  onChange={e => setEditingProduct({...editingProduct, name: e.target.value})}
+                  onChange={e => setEditingProduct({ ...editingProduct, name: e.target.value })}
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">SKU</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-900 outline-none"
                   value={editingProduct.sku || ''}
-                  onChange={e => setEditingProduct({...editingProduct, sku: e.target.value})}
+                  onChange={e => setEditingProduct({ ...editingProduct, sku: e.target.value })}
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Brand</label>
-                <select 
+                <select
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
                   value={editingProduct.brand}
-                  onChange={e => setEditingProduct({...editingProduct, brand: e.target.value})}
+                  onChange={e => setEditingProduct({ ...editingProduct, brand: e.target.value })}
                 >
-                   {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                  {brands.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
-                <select 
+                <select
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
                   value={editingProduct.category}
-                  onChange={e => setEditingProduct({...editingProduct, category: e.target.value})}
+                  onChange={e => setEditingProduct({ ...editingProduct, category: e.target.value })}
                 >
-                   {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
 
@@ -419,8 +416,8 @@ const Inventory: React.FC = () => {
                   Or show current branch stock read-only. */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stock ({currentBranch.name})</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-slate-100 text-slate-500"
                   disabled
                   value={editingProduct.branchStock?.[currentBranch.id] || 0}
@@ -430,40 +427,40 @@ const Inventory: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Price ($)</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none"
                   value={editingProduct.costPrice || 0}
-                  onChange={e => setEditingProduct({...editingProduct, costPrice: Number(e.target.value)})}
+                  onChange={e => setEditingProduct({ ...editingProduct, costPrice: Number(e.target.value) })}
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Selling Price ($)</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none"
                   value={editingProduct.price || 0}
-                  onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})}
+                  onChange={e => setEditingProduct({ ...editingProduct, price: Number(e.target.value) })}
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Min Stock Alert</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none"
                   value={editingProduct.minStockLevel || 5}
-                  onChange={e => setEditingProduct({...editingProduct, minStockLevel: Number(e.target.value)})}
+                  onChange={e => setEditingProduct({ ...editingProduct, minStockLevel: Number(e.target.value) })}
                 />
               </div>
 
               <div className="col-span-2">
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
-                <textarea 
+                <textarea
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none h-20 resize-none"
                   value={editingProduct.description || ''}
-                  onChange={e => setEditingProduct({...editingProduct, description: e.target.value})}
+                  onChange={e => setEditingProduct({ ...editingProduct, description: e.target.value })}
                 />
               </div>
             </div>
@@ -480,7 +477,7 @@ const Inventory: React.FC = () => {
       {isStockModalOpen && adjustingProduct && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
-             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="font-bold text-slate-800">Adjust Stock</h3>
               <button onClick={() => setIsStockModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
@@ -489,34 +486,33 @@ const Inventory: React.FC = () => {
                 <p className="text-xs text-slate-500 uppercase font-bold mb-1">Product</p>
                 <p className="font-bold text-slate-900">{adjustingProduct.name}</p>
                 <div className="flex justify-between mt-1">
-                   <p className="text-xs text-slate-500">Branch: <span className="font-bold text-slate-700">{currentBranch.name}</span></p>
-                   <p className="text-xs text-slate-500">Current: <span className="font-bold text-slate-700">{adjustingProduct.branchStock[currentBranch.id] || 0}</span></p>
+                  <p className="text-xs text-slate-500">Branch: <span className="font-bold text-slate-700">{currentBranch.name}</span></p>
+                  <p className="text-xs text-slate-500">Current: <span className="font-bold text-slate-700">{adjustingProduct.branchStock[currentBranch.id] || 0}</span></p>
                 </div>
               </div>
 
               <div>
-                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Adjustment Type</label>
-                 <div className="grid grid-cols-3 gap-2">
-                   {['IN', 'OUT', 'ADJUSTMENT'].map((type) => (
-                     <button
-                       key={type}
-                       onClick={() => setAdjustmentType(type as any)}
-                       className={`py-2 text-xs font-bold rounded-lg border ${
-                         adjustmentType === type 
-                           ? 'bg-slate-900 text-white border-slate-900' 
-                           : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                       }`}
-                     >
-                       {type === 'IN' ? 'Restock (+)' : type === 'OUT' ? 'Damage/Loss (-)' : 'Set Count (=)'}
-                     </button>
-                   ))}
-                 </div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Adjustment Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['IN', 'OUT', 'ADJUSTMENT'].map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setAdjustmentType(type as any)}
+                      className={`py-2 text-xs font-bold rounded-lg border ${adjustmentType === type
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                    >
+                      {type === 'IN' ? 'Restock (+)' : type === 'OUT' ? 'Damage/Loss (-)' : 'Set Count (=)'}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Quantity</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   min="0"
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
                   value={adjustmentQty}
@@ -526,8 +522,8 @@ const Inventory: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Reason / Note</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="e.g. Monthly Supplier Delivery"
                   className="w-full p-2 border border-slate-200 rounded-lg outline-none"
                   value={adjustmentReason}

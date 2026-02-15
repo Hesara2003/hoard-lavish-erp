@@ -345,13 +345,13 @@ INSERT INTO brands (name) VALUES
   ('Hoard Lavish'), ('Gucci'), ('Prada'), ('Hermes'), ('Rolex'), ('Generic');
 
 -- Products
-INSERT INTO products (id, name, category, brand, price, cost_price, min_stock_level, sku, description, image_url) VALUES
-  ('bb000000-0000-0000-0000-000000000001', 'Midnight Velvet Gown', 'Clothing', 'Hoard Lavish', 1250.00, 600.00, 5, 'DRS-001', 'A luxurious velvet gown in deep midnight blue, perfect for evening galas.', 'https://picsum.photos/400/400?random=1'),
-  ('bb000000-0000-0000-0000-000000000002', 'Italian Leather Loafers', 'Footwear', 'Gucci', 350.00, 150.00, 10, 'SHO-002', 'Handcrafted Italian leather loafers with a classic finish.', 'https://picsum.photos/400/400?random=2'),
-  ('bb000000-0000-0000-0000-000000000003', 'Silk Scarf - Hermes Style', 'Accessories', 'Hermes', 180.00, 60.00, 15, 'ACC-003', '100% pure silk scarf with intricate floral patterns.', 'https://picsum.photos/400/400?random=3'),
-  ('bb000000-0000-0000-0000-000000000004', 'Cashmere Trench Coat', 'Clothing', 'Hoard Lavish', 890.00, 400.00, 5, 'COT-004', 'Beige cashmere blend trench coat, suitable for all seasons.', 'https://picsum.photos/400/400?random=4'),
-  ('bb000000-0000-0000-0000-000000000005', 'Gold Plated Cufflinks', 'Accessories', 'Generic', 120.00, 40.00, 8, 'ACC-005', 'Minimalist gold plated cufflinks for formal attire.', 'https://picsum.photos/400/400?random=5'),
-  ('bb000000-0000-0000-0000-000000000006', 'Structured Tote Bag', 'Bags', 'Prada', 450.00, 180.00, 5, 'BAG-006', 'Durable structured tote with ample space for daily essentials.', 'https://picsum.photos/400/400?random=6');
+INSERT INTO products (id, name, category, brand, price, cost_price, min_stock_level, sku, description) VALUES
+  ('bb000000-0000-0000-0000-000000000001', 'Midnight Velvet Gown', 'Clothing', 'Hoard Lavish', 1250.00, 600.00, 5, 'DRS-001', 'A luxurious velvet gown in deep midnight blue, perfect for evening galas.'),
+  ('bb000000-0000-0000-0000-000000000002', 'Italian Leather Loafers', 'Footwear', 'Gucci', 350.00, 150.00, 10, 'SHO-002', 'Handcrafted Italian leather loafers with a classic finish.'),
+  ('bb000000-0000-0000-0000-000000000003', 'Silk Scarf - Hermes Style', 'Accessories', 'Hermes', 180.00, 60.00, 15, 'ACC-003', '100% pure silk scarf with intricate floral patterns.'),
+  ('bb000000-0000-0000-0000-000000000004', 'Cashmere Trench Coat', 'Clothing', 'Hoard Lavish', 890.00, 400.00, 5, 'COT-004', 'Beige cashmere blend trench coat, suitable for all seasons.'),
+  ('bb000000-0000-0000-0000-000000000005', 'Gold Plated Cufflinks', 'Accessories', 'Generic', 120.00, 40.00, 8, 'ACC-005', 'Minimalist gold plated cufflinks for formal attire.'),
+  ('bb000000-0000-0000-0000-000000000006', 'Structured Tote Bag', 'Bags', 'Prada', 450.00, 180.00, 5, 'BAG-006', 'Durable structured tote with ample space for daily essentials.');
 
 -- Product Branch Stock
 INSERT INTO product_branch_stock (product_id, branch_id, quantity) VALUES

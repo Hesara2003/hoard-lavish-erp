@@ -8,13 +8,13 @@ const POS: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  
+
   // Billing States
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
-  
+
   // Invoice Modal
   const [lastSale, setLastSale] = useState<SalesRecord | null>(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
@@ -30,8 +30,8 @@ const POS: React.FC = () => {
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            p.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.sku.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
@@ -46,13 +46,13 @@ const POS: React.FC = () => {
     e.preventDefault();
     const product = products.find(p => p.sku.toLowerCase() === barcodeInput.toLowerCase());
     if (product) {
-       const branchStock = product.branchStock[currentBranch.id] || 0;
-       if (branchStock > 0) {
-         addToCart(product);
-         setBarcodeInput('');
-       } else {
-         alert('Product out of stock in this branch');
-       }
+      const branchStock = product.branchStock[currentBranch.id] || 0;
+      if (branchStock > 0) {
+        addToCart(product);
+        setBarcodeInput('');
+      } else {
+        alert('Product out of stock in this branch');
+      }
     } else {
       console.log('Product not found');
     }
@@ -94,45 +94,45 @@ const POS: React.FC = () => {
         {/* Header / Search */}
         <div className="p-6 bg-white border-b border-slate-200">
           <div className="flex justify-between items-start mb-4">
-             <div className="flex flex-col md:flex-row gap-4 items-center flex-1">
-                {/* Barcode Scanner Input */}
-                <form onSubmit={handleBarcodeSubmit} className="relative w-full md:w-64">
-                  <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                  <input 
-                    ref={barcodeInputRef}
-                    type="text"
-                    placeholder="Scan Barcode / SKU"
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 bg-slate-50 font-mono"
-                    value={barcodeInput}
-                    onChange={(e) => setBarcodeInput(e.target.value)}
-                  />
-                </form>
+            <div className="flex flex-col md:flex-row gap-4 items-center flex-1">
+              {/* Barcode Scanner Input */}
+              <form onSubmit={handleBarcodeSubmit} className="relative w-full md:w-64">
+                <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <input
+                  ref={barcodeInputRef}
+                  type="text"
+                  placeholder="Scan Barcode / SKU"
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 bg-slate-50 font-mono"
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                />
+              </form>
 
-                <div className="relative flex-1 w-full">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                  <input 
-                    type="text"
-                    placeholder="Search products..."
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-             </div>
-             <div className="ml-4 flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
-                <Store size={14} />
-                {currentBranch.name}
-             </div>
+              <div className="relative flex-1 w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="ml-4 flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
+              <Store size={14} />
+              {currentBranch.name}
+            </div>
           </div>
-          
+
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
             {categories.map(cat => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors
-                  ${selectedCategory === cat 
-                    ? 'bg-slate-900 text-white' 
+                  ${selectedCategory === cat
+                    ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 {cat}
@@ -147,27 +147,17 @@ const POS: React.FC = () => {
             {filteredProducts.map(product => {
               const stock = product.branchStock[currentBranch.id] || 0;
               return (
-                <div 
+                <div
                   key={product.id}
                   onClick={() => stock > 0 && addToCart(product)}
-                  className={`bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition-all group
-                    ${stock > 0 
-                      ? 'hover:shadow-md cursor-pointer hover:border-amber-400' 
+                  className={`bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition-all group relative
+                    ${stock > 0
+                      ? 'hover:shadow-md cursor-pointer hover:border-amber-400'
                       : 'opacity-60 cursor-not-allowed grayscale'}`}
                 >
-                  <div className="h-40 w-full bg-slate-100 rounded-lg mb-3 overflow-hidden relative">
-                     <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                     {stock > 0 && (
-                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                         <span className="text-white font-bold bg-amber-500 px-3 py-1 rounded-full text-sm">+ Add</span>
-                       </div>
-                     )}
-                     {stock === 0 && (
-                       <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
-                         <span className="text-slate-800 font-bold bg-white px-3 py-1 rounded-full text-xs shadow-sm border border-slate-200">Out of Stock</span>
-                       </div>
-                     )}
-                  </div>
+                  {stock === 0 && (
+                    <span className="absolute top-2 right-2 text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Out of Stock</span>
+                  )}
                   <h3 className="font-semibold text-slate-800 text-sm mb-1 truncate">{product.name}</h3>
                   <p className="text-xs text-slate-500 mb-2 font-mono">{product.sku}</p>
                   <div className="flex justify-between items-center">
@@ -185,7 +175,7 @@ const POS: React.FC = () => {
 
       {/* Cart Sidebar */}
       <div className="w-96 bg-white border-l border-slate-200 flex flex-col shadow-2xl z-20">
-        
+
         {/* Customer Selector */}
         <div className="p-4 border-b border-slate-200 bg-slate-50">
           {selectedCustomer ? (
@@ -207,7 +197,7 @@ const POS: React.FC = () => {
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <select 
+                <select
                   className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 appearance-none bg-white"
                   onChange={(e) => {
                     const cust = customers.find(c => c.id === e.target.value);
@@ -219,7 +209,7 @@ const POS: React.FC = () => {
                   {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
-              <button 
+              <button
                 onClick={() => setIsCustomerModalOpen(true)}
                 className="bg-slate-900 text-white p-2 rounded-lg hover:bg-slate-800 transition-colors"
                 title="Add New Customer"
@@ -235,15 +225,15 @@ const POS: React.FC = () => {
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-3">
               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
-                 <ScanBarcode className="w-8 h-8 opacity-40" />
+                <ScanBarcode className="w-8 h-8 opacity-40" />
               </div>
               <p>Scan items or select from grid</p>
             </div>
           ) : (
             cart.map(item => (
               <div key={item.id} className="flex gap-3 items-start p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
-                <div className="w-12 h-12 bg-slate-50 rounded-md overflow-hidden flex-shrink-0 border border-slate-200">
-                  <img src={item.imageUrl} className="w-full h-full object-cover" />
+                <div className="w-10 h-10 bg-slate-100 rounded-md flex-shrink-0 flex items-center justify-center">
+                  <span className="text-sm font-bold text-slate-400">{item.name.charAt(0)}</span>
                 </div>
                 <div className="flex-1">
                   <div className="flex justify-between items-start">
@@ -252,16 +242,16 @@ const POS: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-3 mt-2">
                     <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
-                      <button 
-                        onClick={() => item.quantity > 1 ? addToCart({...item, quantity: -1} as any) : removeFromCart(item.id)}
+                      <button
+                        onClick={() => item.quantity > 1 ? addToCart({ ...item, quantity: -1 } as any) : removeFromCart(item.id)}
                         className="p-1 hover:bg-white rounded-md transition-colors"
                       >
                         <Minus size={12} className="text-slate-600" />
                       </button>
                       <span className="text-xs font-bold w-6 text-center">{item.quantity}</span>
-                      <button 
-                         onClick={() => addToCart(item)}
-                         className="p-1 hover:bg-white rounded-md transition-colors"
+                      <button
+                        onClick={() => addToCart(item)}
+                        className="p-1 hover:bg-white rounded-md transition-colors"
                       >
                         <Plus size={12} className="text-slate-600" />
                       </button>
@@ -276,7 +266,7 @@ const POS: React.FC = () => {
         {/* Footer / Calculations */}
         <div className="p-5 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           <div className="space-y-2 mb-4">
-             <div className="flex justify-between text-slate-500 text-sm">
+            <div className="flex justify-between text-slate-500 text-sm">
               <span>Subtotal</span>
               <span>${subtotal.toFixed(2)}</span>
             </div>
@@ -284,8 +274,8 @@ const POS: React.FC = () => {
               <span>Discount</span>
               <div className="flex items-center gap-1">
                 <span className="text-slate-400">- $</span>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   min="0"
                   className="w-16 text-right border-b border-slate-200 focus:border-amber-500 outline-none text-slate-700"
                   value={discountAmount}
@@ -298,21 +288,21 @@ const POS: React.FC = () => {
               <span>${tax.toFixed(2)}</span>
             </div>
           </div>
-          
+
           <div className="flex justify-between mb-6 items-end pt-2 border-t border-dashed border-slate-200">
             <span className="text-slate-900 font-bold text-lg">Total</span>
             <span className="text-3xl font-bold text-slate-900">${total.toFixed(2)}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <button 
+            <button
               onClick={() => handleCheckout('Cash')}
               disabled={cart.length === 0}
               className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 disabled:opacity-50 transition-colors"
             >
               <Banknote size={18} /> Cash
             </button>
-            <button 
+            <button
               onClick={() => handleCheckout('Card')}
               disabled={cart.length === 0}
               className="flex items-center justify-center gap-2 py-3 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 shadow-lg disabled:opacity-50 transition-colors"
@@ -334,15 +324,15 @@ const POS: React.FC = () => {
             <div className="p-6 space-y-4">
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase">Name</label>
-                <input type="text" className="w-full mt-1 p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500" value={newCustomer.name} onChange={e => setNewCustomer({...newCustomer, name: e.target.value})} />
+                <input type="text" className="w-full mt-1 p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500" value={newCustomer.name} onChange={e => setNewCustomer({ ...newCustomer, name: e.target.value })} />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase">Phone</label>
-                <input type="text" className="w-full mt-1 p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500" value={newCustomer.phone} onChange={e => setNewCustomer({...newCustomer, phone: e.target.value})} />
+                <input type="text" className="w-full mt-1 p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500" value={newCustomer.phone} onChange={e => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
-                <input type="email" className="w-full mt-1 p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500" value={newCustomer.email} onChange={e => setNewCustomer({...newCustomer, email: e.target.value})} />
+                <input type="email" className="w-full mt-1 p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500" value={newCustomer.email} onChange={e => setNewCustomer({ ...newCustomer, email: e.target.value })} />
               </div>
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
@@ -404,7 +394,7 @@ const POS: React.FC = () => {
                   <span>${lastSale.subtotal.toFixed(2)}</span>
                 </div>
                 {lastSale.discount > 0 && (
-                   <div className="flex justify-between text-sm text-emerald-600">
+                  <div className="flex justify-between text-sm text-emerald-600">
                     <span>Discount</span>
                     <span>-${lastSale.discount.toFixed(2)}</span>
                   </div>
@@ -424,19 +414,19 @@ const POS: React.FC = () => {
               </div>
 
               <div className="mt-8 text-center">
-                 <ScanBarcode className="w-full h-12 text-slate-200" />
-                 <p className="text-[10px] text-slate-400 mt-2">Thank you for shopping with us.</p>
+                <ScanBarcode className="w-full h-12 text-slate-200" />
+                <p className="text-[10px] text-slate-400 mt-2">Thank you for shopping with us.</p>
               </div>
             </div>
 
             <div className="p-4 border-t border-slate-100 flex gap-3 bg-white">
-              <button 
+              <button
                 onClick={handlePrint}
                 className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl hover:bg-slate-800 transition-colors font-medium"
               >
                 <Printer size={18} /> Print Receipt
               </button>
-              <button 
+              <button
                 onClick={() => setIsInvoiceOpen(false)}
                 className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-medium transition-colors"
               >

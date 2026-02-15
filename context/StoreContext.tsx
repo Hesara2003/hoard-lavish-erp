@@ -18,6 +18,7 @@ interface StoreContextType {
   users: User[];
   settings: AppSettings;
   currentBranch: Branch;
+  currentUser: User | null;
   currentView: ViewState;
   isLoading: boolean;
   dbError: string | null;
@@ -64,6 +65,8 @@ interface StoreContextType {
   exportData: () => string;
   importData: (jsonData: string) => boolean;
 
+  login: (user: User) => void;
+  logout: () => void;
   setView: (view: ViewState) => void;
 }
 
@@ -94,6 +97,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
 
   const [currentView, setCurrentView] = useState<ViewState>('DASHBOARD');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
 
@@ -555,10 +559,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setView = (view: ViewState) => setCurrentView(view);
 
+  const login = (user: User) => {
+    setCurrentUser(user);
+    // Set user's branch if they have one assigned
+    if (user.branchId) {
+      const userBranch = branches.find(b => b.id === user.branchId);
+      if (userBranch) setCurrentBranch(userBranch);
+    }
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    setCurrentView('DASHBOARD');
+    clearCart();
+  };
+
   return (
     <StoreContext.Provider value={{
       products, customers, cart, salesHistory, stockHistory, categories, brands, branches, suppliers, supplierTransactions, expenses, users, settings,
-      currentBranch, currentView, isLoading, dbError,
+      currentBranch, currentUser, currentView, isLoading, dbError,
       setBranch, addBranch, updateBranch,
       addProduct, updateProduct, deleteProduct,
       addCustomer, updateCustomer, deleteCustomer,
@@ -569,7 +588,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addExpense, deleteExpense,
       addUser, updateUser, deleteUser,
       updateSettings, exportData, importData,
-      setView
+      login, logout, setView
     }}>
       {children}
     </StoreContext.Provider>

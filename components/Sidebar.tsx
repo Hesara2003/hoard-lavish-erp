@@ -4,14 +4,14 @@ import { useStore } from '../context/StoreContext';
 import { ViewState } from '../types';
 
 const Sidebar: React.FC = () => {
-  const { currentView, setView, branches, currentBranch, setBranch } = useStore();
+  const { currentView, setView, branches, currentBranch, setBranch, currentUser, logout } = useStore();
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewState, icon: any, label: string }) => (
     <button
       onClick={() => setView(view)}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group
-        ${currentView === view 
-          ? 'bg-slate-900 text-white shadow-md' 
+        ${currentView === view
+          ? 'bg-slate-900 text-white shadow-md'
           : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
     >
       <Icon size={20} className={`${currentView === view ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-600'}`} />
@@ -61,7 +61,18 @@ const Sidebar: React.FC = () => {
       </nav>
 
       <div className="p-4 border-t border-slate-100">
-        <button className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+        {currentUser && (
+          <div className="flex items-center gap-3 px-3 py-2 mb-2">
+            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-sm">
+              {currentUser.name.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800 truncate">{currentUser.name}</p>
+              <p className="text-[10px] text-slate-400 uppercase font-bold">{currentUser.role}</p>
+            </div>
+          </div>
+        )}
+        <button onClick={logout} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
           <LogOut size={20} />
           <span className="font-medium">Logout</span>
         </button>

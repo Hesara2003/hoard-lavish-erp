@@ -10,6 +10,7 @@ import Suppliers from './components/Suppliers';
 import Accounting from './components/Accounting';
 import Customers from './components/Customers';
 import Settings from './components/Settings';
+import LoginPage from './components/LoginPage';
 
 // Main Layout Component handling the view switching
 const Layout: React.FC = () => {
@@ -50,12 +51,23 @@ const Layout: React.FC = () => {
   );
 };
 
+const AppContent: React.FC = () => {
+  const { currentUser } = useStore();
+
+  if (!currentUser) {
+    return <LoginPage />;
+  }
+
+  return <Layout />;
+};
+
 const App: React.FC = () => {
   return (
     <StoreProvider>
-      <Layout />
+      <AppContent />
     </StoreProvider>
   );
 };
 
 export default App;
+
