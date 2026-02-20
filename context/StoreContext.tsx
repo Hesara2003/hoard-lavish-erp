@@ -36,7 +36,7 @@ interface StoreContextType {
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
   deleteCustomer: (id: string) => void;
 
-  addToCart: (product: Product) => void;
+  addToCart: (product: Product) => string;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
 
@@ -295,14 +295,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   // CART ACTIONS
   // ============================================================
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product): string => {
     const currentStock = product.branchStock[currentBranch.id] || 0;
     const cartItem = cart.find(item => item.id === product.id);
     const currentQty = cartItem ? cartItem.quantity : 0;
 
     if (currentQty + 1 > currentStock) {
-      alert(`Insufficient stock in ${currentBranch.name}. Available: ${currentStock}`);
-      return;
+      return `Insufficient stock in ${currentBranch.name}. Available: ${currentStock}`;
     }
 
     setCart(prev => {
@@ -312,6 +311,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       return [...prev, { ...product, quantity: 1 }];
     });
+    return 'ok';
   };
 
   const removeFromCart = (productId: string) => {
@@ -325,8 +325,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   const completeSale = (paymentMethod: SalesRecord['paymentMethod'], discount: number, customerId?: string): SalesRecord => {
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const tax = (subtotal - discount) * settings.taxRate;
-    const totalAmount = subtotal - discount + tax;
+    const tax = 0;
+    const totalAmount = subtotal - discount;
     const totalCost = cart.reduce((sum, item) => sum + (item.costPrice * item.quantity), 0);
 
     const customer = customers.find(c => c.id === customerId);
