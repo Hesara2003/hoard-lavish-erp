@@ -176,13 +176,16 @@ const Dashboard: React.FC = () => {
           color: 'rose'
         });
       } else if (mv.type === 'ADJUSTMENT') {
+        const isEdit = mv.reason.startsWith('Product edited');
         items.push({
           id: `stock-${mv.id}`,
           date: mv.date,
           icon: 'adjustment',
-          message: `Stock adjusted`,
-          detail: `${mv.productName} adjusted by ${mv.quantity} units — ${mv.reason}`,
-          color: 'amber'
+          message: isEdit ? 'Product updated' : 'Stock adjusted',
+          detail: isEdit
+            ? `${mv.productName} details were modified`
+            : `${mv.productName} adjusted by ${mv.quantity} units — ${mv.reason}`,
+          color: isEdit ? 'indigo' : 'amber'
         });
       }
     });

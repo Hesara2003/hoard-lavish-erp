@@ -1,15 +1,49 @@
 import React, { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, PieChart, Pie, Cell } from 'recharts';
-import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, FileText } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, FileText, AlertTriangle, Building2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { EXPENSE_CATEGORIES } from '../constants';
 import { Expense } from '../types';
+
+// --- Delete Confirmation Popup ---
+const ConfirmDialog: React.FC<{
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ title, message, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onCancel}>
+    <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="p-4 flex items-center gap-3 bg-red-50">
+        <div className="p-2 rounded-full bg-red-100 text-red-600">
+          <AlertTriangle size={20} />
+        </div>
+        <div className="flex-1">
+          <h4 className="font-bold text-sm text-red-800">{title}</h4>
+          <p className="text-sm text-slate-600 mt-0.5">{message}</p>
+        </div>
+      </div>
+      <div className="p-3 flex justify-end gap-2 bg-white border-t border-slate-100">
+        <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">
+          Cancel
+        </button>
+        <button onClick={onConfirm} className="px-5 py-2 rounded-lg text-white text-sm font-medium bg-red-500 hover:bg-red-600 transition-colors">
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 const Accounting: React.FC = () => {
   const { salesHistory, expenses, supplierTransactions, currentBranch, branches, addExpense, deleteExpense } = useStore();
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'EXPENSES'>('DASHBOARD');
   const [filterPeriod, setFilterPeriod] = useState<'ALL' | 'MONTH'>('ALL');
+  const [branchFilter, setBranchFilter] = useState<string>('ALL');
   
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; desc: string } | null>(null);
+
   // Add Expense Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
@@ -31,8 +65,12 @@ const Accounting: React.FC = () => {
   const filteredSales = salesHistory.filter(s => isInPeriod(s.date));
   const totalIncome = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
 
-  // 2. Expenses (Operating Expenses)
-  const filteredExpenses = expenses.filter(e => isInPeriod(e.date));
+  // 2. Expenses (Operating Expenses) — filtered by period AND branch
+  const filteredExpenses = expenses.filter(e => {
+    if (!isInPeriod(e.date)) return false;
+    if (branchFilter !== 'ALL' && e.branchId !== branchFilter) return false;
+    return true;
+  });
   const totalOperatingExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
   // 3. COGS / Inventory Costs (Supplier Payments)
@@ -153,19 +191,34 @@ const Accounting: React.FC = () => {
               Expense Management
             </button>
           </div>
-          <div className="flex bg-slate-100 rounded-lg p-1">
-             <button 
-               onClick={() => setFilterPeriod('ALL')}
-               className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${filterPeriod === 'ALL' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
-             >
-               All Time
-             </button>
-             <button 
-               onClick={() => setFilterPeriod('MONTH')}
-               className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${filterPeriod === 'MONTH' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
-             >
-               This Month
-             </button>
+          <div className="flex items-center gap-3">
+            {/* Branch Filter */}
+            <div className="flex items-center gap-1">
+              <Building2 size={14} className="text-slate-400" />
+              <select
+                className="text-xs font-medium bg-slate-100 border-0 rounded-lg px-3 py-1.5 text-slate-700 outline-none cursor-pointer"
+                value={branchFilter}
+                onChange={e => setBranchFilter(e.target.value)}
+              >
+                <option value="ALL">All Branches</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+            {/* Period Filter */}
+            <div className="flex bg-slate-100 rounded-lg p-1">
+               <button 
+                 onClick={() => setFilterPeriod('ALL')}
+                 className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${filterPeriod === 'ALL' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+               >
+                 All Time
+               </button>
+               <button 
+                 onClick={() => setFilterPeriod('MONTH')}
+                 className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${filterPeriod === 'MONTH' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+               >
+                 This Month
+               </button>
+            </div>
           </div>
         </div>
       </div>
@@ -334,7 +387,7 @@ const Accounting: React.FC = () => {
                      <td className="p-4 text-right font-bold text-slate-800">${e.amount.toFixed(2)}</td>
                      <td className="p-4 text-right">
                        <button 
-                         onClick={() => deleteExpense(e.id)}
+                         onClick={() => setDeleteConfirm({ id: e.id, desc: e.description })}
                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                        >
                          <Trash2 size={16} />
@@ -420,6 +473,15 @@ const Accounting: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {/* Delete Expense Confirmation */}
+      {deleteConfirm && (
+        <ConfirmDialog
+          title="Delete Expense"
+          message={`Are you sure you want to delete "${deleteConfirm.desc}"? This action cannot be undone.`}
+          onConfirm={() => { deleteExpense(deleteConfirm.id); setDeleteConfirm(null); }}
+          onCancel={() => setDeleteConfirm(null)}
+        />
       )}
     </div>
   );
