@@ -2,7 +2,7 @@
 
 **System:** Hoard Lavish Clothing Brand ERP
 **Stack:** React 19 + TypeScript 5.8 + Vite 6 + Electron 33 + Supabase
-**Test Branch:** `test` — 151 tests, 8 test files, **100% pass rate**
+**Test Branch:** `test` — 156 tests, 13 test files, **100% pass rate**
 **Report Date:** February 2026
 
 ---
@@ -46,7 +46,12 @@ tests/
 │   ├── LoginPage.test.tsx                # 15 tests — 3-step PIN login flow
 │   ├── POS.test.tsx                      # 26 tests — Product grid, cart, checkout, customers
 │   ├── Inventory.test.tsx                # 9 tests  — Product list, tabs, CRUD, stock adjustment
-│   └── Sidebar.test.tsx                  # 7 tests  — Navigation, role-based filtering, branch
+│   ├── Sidebar.test.tsx                  # 7 tests  — Navigation, role-based filtering, branch
+│   ├── Dashboard.test.tsx                # 1 test   — Dashboard component rendering (merged from feature branches)
+│   ├── Customers.test.tsx                # 1 test   — Customer management component rendering
+│   ├── Suppliers.test.tsx                # 1 test   — Supplier management component rendering
+│   ├── Accounting.test.tsx               # 1 test   — Accounting module component rendering
+│   └── Settings.test.tsx                 # 1 test   — Settings page component rendering
 ├── services/
 │   └── supabaseService.test.ts           # 17 tests — All Supabase CRUD + error handling
 ├── unit/
@@ -67,12 +72,17 @@ tests/
 | **Component** | POS.test.tsx | 26 | Product grid, search, barcode, cart, checkout, invoices |
 | **Component** | Inventory.test.tsx | 9 | Product table, search, tabs, CRUD modal, stock adjustment |
 | **Component** | Sidebar.test.tsx | 7 | Nav items, role-based visibility, branch selector |
+| **Component** | Dashboard.test.tsx | 1 | Dashboard rendering with charts, filters (merged from dashboard-enhancements) |
+| **Component** | Customers.test.tsx | 1 | Customer management UI (merged from customer-enhancements) |
+| **Component** | Suppliers.test.tsx | 1 | Supplier management with tabs (merged from supplier-enhancements) |
+| **Component** | Accounting.test.tsx | 1 | Accounting module with charts (merged from Dev) |
+| **Component** | Settings.test.tsx | 1 | Settings page rendering (merged from role-restrictions-ui) |
 | **Service** | supabaseService.test.ts | 17 | DB query construction, error handling, data mapping |
 | **Unit** | business-logic.test.ts | 46 | Core store logic — stock, cart, sales, invoices, users |
 | **Performance** | load.test.ts | 12 | 500–1000 product catalogs, 100 rapid sales, memory |
 | **Resilience** | offline-error.test.ts | 19 | localStorage, offline, API failures, input validation |
 | **E2E** | enterprise-flows.spec.ts | 15 | Full user journeys in real browser (Playwright) |
-| | **TOTAL** | **151 + 15 E2E** | |
+| | **TOTAL** | **156 + 15 E2E** | |
 
 ### 1.4 Architectural Decisions & Rationale
 
