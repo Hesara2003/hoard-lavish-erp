@@ -11,6 +11,7 @@ import Accounting from './components/Accounting';
 import Customers from './components/Customers';
 import Settings from './components/Settings';
 import LoginPage from './components/LoginPage';
+import UpdateNotification from './components/UpdateNotification';
 
 // Main Layout Component handling the view switching
 const Layout: React.FC = () => {
@@ -72,6 +73,7 @@ const App: React.FC = () => {
   return (
     <StoreProvider>
       <AppContent />
+      <UpdateNotification />
     </StoreProvider>
   );
 };
