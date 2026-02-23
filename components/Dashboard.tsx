@@ -11,10 +11,8 @@ const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimum
 
 const Dashboard: React.FC = () => {
   const { salesHistory, products, expenses, supplierTransactions, stockHistory, currentUser } = useStore();
-
-  const role = currentUser?.role;
+  const role = currentUser?.role || 'CASHIER';
   const isAdmin = role === 'ADMIN';
-  const isManagerOrCashier = role === 'MANAGER' || role === 'CASHIER';
 
   // --- Filter State ---
   const today = new Date();
@@ -178,13 +176,16 @@ const Dashboard: React.FC = () => {
           color: 'rose'
         });
       } else if (mv.type === 'ADJUSTMENT') {
+        const isEdit = mv.reason.startsWith('Product edited');
         items.push({
           id: `stock-${mv.id}`,
           date: mv.date,
           icon: 'adjustment',
-          message: `Stock adjusted`,
-          detail: `${mv.productName} adjusted by ${mv.quantity} units — ${mv.reason}`,
-          color: 'amber'
+          message: isEdit ? 'Product updated' : 'Stock adjusted',
+          detail: isEdit
+            ? `${mv.productName} details were modified`
+            : `${mv.productName} adjusted by ${mv.quantity} units — ${mv.reason}`,
+          color: isEdit ? 'indigo' : 'amber'
         });
       }
     });
@@ -322,8 +323,8 @@ const Dashboard: React.FC = () => {
         <FilterControls />
       </div>
 
-      {/* OVERVIEW STATS — hidden for Manager & Cashier */}
-      {!isManagerOrCashier && (
+      {/* OVERVIEW STATS — Admin only */}
+      {isAdmin && (
       <div className="mb-2">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
@@ -424,8 +425,8 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* CHARTS — hidden for Manager & Cashier */}
-      {!isManagerOrCashier && (
+      {/* CHARTS — Admin only */}
+      {isAdmin && (
       <div className="grid grid-cols-1 gap-8 mb-8">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
           <div className="flex justify-between items-center mb-6">

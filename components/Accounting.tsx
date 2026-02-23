@@ -1,12 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, PieChart, Pie, Cell } from 'recharts';
-import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, FileText, Building2, AlertTriangle } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, FileText, AlertTriangle, Building2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { EXPENSE_CATEGORIES } from '../constants';
 import { Expense } from '../types';
-
-const CUR = 'LKR';
-const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // --- Delete Confirmation Popup ---
 const ConfirmDialog: React.FC<{
@@ -43,10 +40,10 @@ const Accounting: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'EXPENSES'>('DASHBOARD');
   const [filterPeriod, setFilterPeriod] = useState<'ALL' | 'MONTH'>('ALL');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
-
+  
   // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; desc: string } | null>(null);
-  
+
   // Add Expense Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
@@ -64,14 +61,16 @@ const Accounting: React.FC = () => {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   };
 
-  const matchesBranch = (branchId: string) => branchFilter === 'ALL' || branchId === branchFilter;
-
   // 1. Income (Sales)
-  const filteredSales = salesHistory.filter(s => isInPeriod(s.date) && matchesBranch(s.branchId));
+  const filteredSales = salesHistory.filter(s => isInPeriod(s.date));
   const totalIncome = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
 
-  // 2. Expenses (Operating Expenses)
-  const filteredExpenses = expenses.filter(e => isInPeriod(e.date) && matchesBranch(e.branchId));
+  // 2. Expenses (Operating Expenses) — filtered by period AND branch
+  const filteredExpenses = expenses.filter(e => {
+    if (!isInPeriod(e.date)) return false;
+    if (branchFilter !== 'ALL' && e.branchId !== branchFilter) return false;
+    return true;
+  });
   const totalOperatingExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
   // 3. COGS / Inventory Costs (Supplier Payments)
@@ -193,6 +192,7 @@ const Accounting: React.FC = () => {
             </button>
           </div>
           <div className="flex items-center gap-3">
+            {/* Branch Filter */}
             <div className="flex items-center gap-1">
               <Building2 size={14} className="text-slate-400" />
               <select
@@ -204,6 +204,7 @@ const Accounting: React.FC = () => {
                 {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
+            {/* Period Filter */}
             <div className="flex bg-slate-100 rounded-lg p-1">
                <button 
                  onClick={() => setFilterPeriod('ALL')}
@@ -231,7 +232,7 @@ const Accounting: React.FC = () => {
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-500">Total Income</p>
-                    <h3 className="text-2xl font-bold text-emerald-600 mt-1">{fmtCurrency(totalIncome)}</h3>
+                    <h3 className="text-2xl font-bold text-emerald-600 mt-1">${totalIncome.toLocaleString()}</h3>
                   </div>
                   <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><TrendingUp size={20} /></div>
                 </div>
@@ -241,8 +242,8 @@ const Accounting: React.FC = () => {
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-500">Total Expenses</p>
-                    <h3 className="text-2xl font-bold text-rose-600 mt-1">{fmtCurrency(totalExpenses)}</h3>
-                    <p className="text-xs text-slate-400 mt-1">Ops: {fmtCurrency(totalOperatingExpenses)} | Stock: {fmtCurrency(totalSupplierPayments)}</p>
+                    <h3 className="text-2xl font-bold text-rose-600 mt-1">${totalExpenses.toLocaleString()}</h3>
+                    <p className="text-xs text-slate-400 mt-1">Ops: ${totalOperatingExpenses} | Stock: ${totalSupplierPayments}</p>
                   </div>
                   <div className="p-2 bg-rose-50 rounded-lg text-rose-600"><TrendingDown size={20} /></div>
                 </div>
@@ -253,7 +254,7 @@ const Accounting: React.FC = () => {
                   <div>
                     <p className="text-sm font-medium text-slate-500">Net Profit</p>
                     <h3 className={`text-2xl font-bold mt-1 ${netProfit >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
-                      {fmtCurrency(netProfit)}
+                      ${netProfit.toLocaleString()}
                     </h3>
                   </div>
                   <div className="p-2 bg-amber-50 rounded-lg text-amber-600"><DollarSign size={20} /></div>
@@ -308,7 +309,7 @@ const Accounting: React.FC = () => {
                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                            ))}
                          </Pie>
-                         <Tooltip formatter={(value) => fmtCurrency(Number(value))} />
+                         <Tooltip formatter={(value) => `$${value}`} />
                          <Legend />
                        </PieChart>
                      </ResponsiveContainer>
@@ -342,7 +343,7 @@ const Accounting: React.FC = () => {
                        <td className="p-4 font-medium text-slate-900">{item.desc}</td>
                        <td className="p-4 text-slate-600">{item.category}</td>
                        <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                         {item.type === 'OUT' ? '-' : ''}{fmtCurrency(item.amount)}
+                         {item.type === 'OUT' ? '-' : ''}${item.amount.toFixed(2)}
                        </td>
                        <td className="p-4 text-center">
                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${item.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
@@ -383,7 +384,7 @@ const Accounting: React.FC = () => {
                         <span className="bg-slate-100 px-2 py-1 rounded text-xs font-medium">{e.category}</span>
                      </td>
                      <td className="p-4 text-slate-600">{e.branchName}</td>
-                     <td className="p-4 text-right font-bold text-slate-800">{fmtCurrency(e.amount)}</td>
+                     <td className="p-4 text-right font-bold text-slate-800">${e.amount.toFixed(2)}</td>
                      <td className="p-4 text-right">
                        <button 
                          onClick={() => setDeleteConfirm({ id: e.id, desc: e.description })}
@@ -424,7 +425,7 @@ const Accounting: React.FC = () => {
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Amount (LKR)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Amount ($)</label>
                   <input 
                     type="number" 
                     className="w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
@@ -473,7 +474,7 @@ const Accounting: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Delete Confirmation Popup */}
+      {/* Delete Expense Confirmation */}
       {deleteConfirm && (
         <ConfirmDialog
           title="Delete Expense"

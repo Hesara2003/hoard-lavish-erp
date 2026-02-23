@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Settings, LogOut, History, Store, ChevronDown, Truck, PieChart, Users } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { ViewState } from '../types';
+import { ViewState, Role } from '../types';
 
 const Sidebar: React.FC = () => {
   const { currentView, setView, branches, currentBranch, setBranch, currentUser, logout } = useStore();
+  const role: Role = currentUser?.role || 'CASHIER';
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewState, icon: any, label: string }) => (
     <button
@@ -18,11 +19,6 @@ const Sidebar: React.FC = () => {
       <span className="font-medium">{label}</span>
     </button>
   );
-
-  const role = currentUser?.role;
-  const isAdmin = role === 'ADMIN';
-  const isManager = role === 'MANAGER';
-  const isCashier = role === 'CASHIER';
 
   return (
     <div className="w-64 h-screen bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
@@ -58,13 +54,11 @@ const Sidebar: React.FC = () => {
         <NavItem view="POS" icon={ShoppingCart} label="Point of Sale" />
         <NavItem view="INVENTORY" icon={Package} label="Inventory" />
         <NavItem view="CUSTOMERS" icon={Users} label="Customers" />
-        {/* Cashier: no Suppliers, no Accounting */}
-        {!isCashier && <NavItem view="SUPPLIERS" icon={Truck} label="Suppliers" />}
-        {!isCashier && <NavItem view="ACCOUNTING" icon={PieChart} label="Accounting" />}
+        {role !== 'CASHIER' && <NavItem view="SUPPLIERS" icon={Truck} label="Suppliers" />}
+        {role !== 'CASHIER' && <NavItem view="ACCOUNTING" icon={PieChart} label="Accounting" />}
         <NavItem view="HISTORY" icon={History} label="Sales History" />
-        {/* Manager & Cashier: no Branches, no Settings */}
-        {isAdmin && <NavItem view="BRANCHES" icon={Store} label="Branch Mgmt" />}
-        {isAdmin && <NavItem view="SETTINGS" icon={Settings} label="Settings" />}
+        {role === 'ADMIN' && <NavItem view="BRANCHES" icon={Store} label="Branch Mgmt" />}
+        {role === 'ADMIN' && <NavItem view="SETTINGS" icon={Settings} label="Settings" />}
       </nav>
 
       <div className="p-4 border-t border-slate-100">

@@ -7,12 +7,11 @@ const Settings: React.FC = () => {
   const { 
     settings, updateSettings, 
     users, addUser, updateUser, deleteUser, 
-    branches, categories, addCategory, removeCategory, brands, addBrand, removeBrand,
+    branches,
     exportData, importData 
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'USERS' | 'DATA'>('GENERAL');
-  const [showDevAccessPopup, setShowDevAccessPopup] = useState(false);
   
   // User Management State
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -21,6 +20,27 @@ const Settings: React.FC = () => {
   // Data Management State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<'IDLE' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [showDevAccessPopup, setShowDevAccessPopup] = useState(false);
+
+  // Local state for General tab (with save button)
+  const [generalForm, setGeneralForm] = useState({
+    storeName: settings.storeName,
+    currencySymbol: settings.currencySymbol,
+    taxRate: settings.taxRate * 100,
+    enableLowStockAlerts: settings.enableLowStockAlerts
+  });
+  const [generalSaved, setGeneralSaved] = useState(false);
+
+  const handleSaveGeneral = () => {
+    updateSettings({
+      storeName: generalForm.storeName,
+      currencySymbol: generalForm.currencySymbol,
+      taxRate: generalForm.taxRate * 0.01,
+      enableLowStockAlerts: generalForm.enableLowStockAlerts
+    });
+    setGeneralSaved(true);
+    setTimeout(() => setGeneralSaved(false), 2000);
+  };
 
   // Handlers
   const handleSaveUser = () => {
@@ -90,13 +110,7 @@ const Settings: React.FC = () => {
         <div className="py-4">
            <TabButton id="GENERAL" label="General" icon={SettingsIcon} />
            <TabButton id="USERS" label="Users & Roles" icon={Users} />
-           <button
-             onClick={() => setShowDevAccessPopup(true)}
-             className="flex items-center gap-3 px-6 py-4 w-full text-left transition-colors border-l-4 border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-           >
-             <Database size={20} />
-             Backup & Restore
-           </button>
+           <TabButton id="DATA" label="Backup & Restore" icon={Database} />
         </div>
       </div>
 
@@ -114,8 +128,8 @@ const Settings: React.FC = () => {
                 <input 
                   type="text" 
                   className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
-                  value={settings.storeName}
-                  onChange={e => updateSettings({ storeName: e.target.value })}
+                  value={generalForm.storeName}
+                  onChange={e => setGeneralForm(prev => ({ ...prev, storeName: e.target.value }))}
                 />
               </div>
 
@@ -125,8 +139,8 @@ const Settings: React.FC = () => {
                   <input 
                     type="text" 
                     className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
-                    value={settings.currencySymbol}
-                    onChange={e => updateSettings({ currencySymbol: e.target.value })}
+                    value={generalForm.currencySymbol}
+                    onChange={e => setGeneralForm(prev => ({ ...prev, currencySymbol: e.target.value }))}
                   />
                 </div>
                 <div>
@@ -135,8 +149,8 @@ const Settings: React.FC = () => {
                     type="number" 
                     step="0.01"
                     className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
-                    value={settings.taxRate * 100}
-                    onChange={e => updateSettings({ taxRate: Number(e.target.value) * 0.01 })}
+                    value={generalForm.taxRate}
+                    onChange={e => setGeneralForm(prev => ({ ...prev, taxRate: Number(e.target.value) }))}
                   />
                 </div>
               </div>
@@ -150,11 +164,20 @@ const Settings: React.FC = () => {
                   <input 
                     type="checkbox" 
                     className="sr-only peer"
-                    checked={settings.enableLowStockAlerts}
-                    onChange={e => updateSettings({ enableLowStockAlerts: e.target.checked })}
+                    checked={generalForm.enableLowStockAlerts}
+                    onChange={e => setGeneralForm(prev => ({ ...prev, enableLowStockAlerts: e.target.checked }))}
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                 </label>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button 
+                  onClick={handleSaveGeneral}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium shadow-sm"
+                >
+                  {generalSaved ? <><CheckCircle size={16} /> Saved!</> : <><Save size={16} /> Save Changes</>}
+                </button>
               </div>
 
             </div>
@@ -166,7 +189,6 @@ const Settings: React.FC = () => {
           <div className="max-w-4xl">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-slate-900">User Management</h3>
-              {/* Add User button removed per business requirement */}
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -219,58 +241,72 @@ const Settings: React.FC = () => {
           </div>
         )}
 
-        {/* INVENTORY SETTINGS TAB - Removed: available in Inventory page */}
-
-        {/* DATA BACKUP TAB */}
+        {/* DATA BACKUP TAB — Locked behind developer access */}
         {activeTab === 'DATA' && (
           <div className="max-w-2xl">
             <h3 className="text-lg font-bold text-slate-900 mb-6">Backup & Restore</h3>
             
             <div className="space-y-6">
-              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center opacity-60">
                 <div>
                   <h4 className="font-bold text-slate-800">Export System Data</h4>
                   <p className="text-sm text-slate-500 mt-1">Download a full JSON backup of sales, inventory, and settings.</p>
                 </div>
                 <button 
-                  onClick={handleExport}
+                  onClick={() => setShowDevAccessPopup(true)}
                   className="flex items-center gap-2 px-6 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-medium transition-colors"
                 >
-                  <Download size={18} /> Download
+                  <Lock size={18} /> Download
                 </button>
               </div>
 
-              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm opacity-60">
                  <div className="flex justify-between items-center mb-4">
                     <div>
                       <h4 className="font-bold text-slate-800">Import Data</h4>
                       <p className="text-sm text-slate-500 mt-1">Restore system from a previous backup file.</p>
                     </div>
-                    {importStatus === 'SUCCESS' && <span className="text-emerald-600 flex items-center gap-1 font-bold text-sm"><CheckCircle size={16}/> Done</span>}
-                    {importStatus === 'ERROR' && <span className="text-red-600 flex items-center gap-1 font-bold text-sm"><AlertTriangle size={16}/> Failed</span>}
                  </div>
                  
-                 <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                   <Upload className="mx-auto text-slate-400 mb-3" size={32} />
-                   <p className="font-medium text-slate-600">Click to upload backup file</p>
-                   <p className="text-xs text-slate-400 mt-1">JSON files only</p>
-                   <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept=".json" 
-                    onChange={handleImport} 
-                   />
+                 <div 
+                   className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center bg-slate-50 cursor-pointer"
+                   onClick={() => setShowDevAccessPopup(true)}
+                 >
+                   <Lock className="mx-auto text-slate-400 mb-3" size={32} />
+                   <p className="font-medium text-slate-600">Locked — Developer Access Required</p>
+                   <p className="text-xs text-slate-400 mt-1">Contact your developer to perform backup operations.</p>
                  </div>
-                 <p className="text-xs text-amber-600 mt-3 flex items-center gap-1">
-                   <AlertTriangle size={12} /> Warning: Importing will overwrite all current system data.
-                 </p>
               </div>
             </div>
           </div>
         )}
 
       </div>
+
+      {/* Developer Access Popup */}
+      {showDevAccessPopup && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden">
+            <div className="p-5 flex items-center gap-3 bg-amber-50 border-b border-amber-100">
+              <div className="p-2 rounded-full bg-amber-100 text-amber-600">
+                <Lock size={20} />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-bold text-sm text-amber-800">Developer Access Required</h4>
+                <p className="text-sm text-slate-600 mt-0.5">Backup and restore operations are restricted. Please contact your system developer for assistance.</p>
+              </div>
+            </div>
+            <div className="p-4 flex justify-end bg-white">
+              <button 
+                onClick={() => setShowDevAccessPopup(false)} 
+                className="px-5 py-2 rounded-lg text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* USER MODAL */}
       {isUserModalOpen && (
@@ -323,28 +359,6 @@ const Settings: React.FC = () => {
             <div className="mt-6 flex justify-end gap-3">
               <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
               <button onClick={handleSaveUser} className="px-6 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800">Save User</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Dev Access Popup for Backup & Restore */}
-      {showDevAccessPopup && (
-        <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowDevAccessPopup(false)}>
-          <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-5 flex items-center gap-3 bg-amber-50">
-              <div className="p-2 rounded-full bg-amber-100 text-amber-600">
-                <Lock size={20} />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-bold text-sm text-amber-800">Developer Access Required</h4>
-                <p className="text-sm text-slate-600 mt-1">Backup & Restore features are restricted. Please contact the developer for access.</p>
-              </div>
-            </div>
-            <div className="p-3 flex justify-end bg-white border-t border-slate-100">
-              <button onClick={() => setShowDevAccessPopup(false)} className="px-5 py-2 rounded-lg text-white text-sm font-medium bg-amber-500 hover:bg-amber-600 transition-colors">
-                OK
-              </button>
             </div>
           </div>
         </div>

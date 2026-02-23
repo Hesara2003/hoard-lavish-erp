@@ -3,9 +3,6 @@ import { Store, Plus, MapPin, Phone, Edit2, BarChart2, Package } from 'lucide-re
 import { useStore } from '../context/StoreContext';
 import { Branch } from '../types';
 
-const CUR = 'LKR';
-const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 const Branches: React.FC = () => {
   const { branches, addBranch, updateBranch, products, salesHistory } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,7 +40,6 @@ const Branches: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-900">Branch Management</h2>
           <p className="text-slate-500">Manage store locations and view performance.</p>
         </div>
-        {/* Add Branch removed per business requirement */}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -83,13 +79,13 @@ const Branches: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs text-slate-400 uppercase font-bold mb-1">Stock Value</p>
-                  <p className="text-lg font-bold text-slate-800">{fmtCurrency(stats.stockValue)}</p>
+                  <p className="text-lg font-bold text-slate-800">${stats.stockValue.toLocaleString()}</p>
                 </div>
                 <div className="col-span-2 pt-4 border-t border-slate-200">
                   <p className="text-xs text-slate-400 uppercase font-bold mb-1">Total Revenue</p>
                   <p className="text-xl font-bold text-emerald-600 flex items-center gap-2">
                     <BarChart2 size={18} />
-                    {fmtCurrency(stats.totalSales)}
+                    ${stats.totalSales.toLocaleString()}
                   </p>
                 </div>
               </div>

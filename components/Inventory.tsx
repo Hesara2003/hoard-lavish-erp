@@ -54,16 +54,12 @@ interface VariationRow {
 
 const Inventory: React.FC = () => {
   const {
-    products, categories, brands, stockHistory, currentBranch, currentUser,
+    products, categories, brands, stockHistory, currentBranch,
     addProduct, updateProduct, deleteProduct, adjustStock,
-    addCategory, removeCategory, addBrand, removeBrand
+    addCategory, removeCategory, addBrand, removeBrand,
+    currentUser
   } = useStore();
-
-  const role = currentUser?.role;
-  const isCashier = role === 'CASHIER';
-  const canManageStock = !isCashier; // Cashier cannot adjust/restock
-  const canManageProducts = !isCashier; // Cashier cannot add/edit/delete
-  const canManageCategoriesBrands = !isCashier; // Cashier cannot add brands/categories
+  const isCashier = currentUser?.role === 'CASHIER';
 
   const [activeTab, setActiveTab] = useState<InventoryTab>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -260,7 +256,7 @@ const Inventory: React.FC = () => {
             </div>
             <p className="text-sm text-slate-500">Manage products and stock levels for this branch.</p>
           </div>
-          {canManageProducts && (
+          {!isCashier && (
           <button
             onClick={handleOpenAdd}
             className="bg-slate-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium"
@@ -274,7 +270,7 @@ const Inventory: React.FC = () => {
           <TabButton id="ALL" label="All Products" icon={Box} />
           <TabButton id="LOW_STOCK" label="Low Stock Alerts" icon={AlertCircle} />
           <TabButton id="ADJUSTMENTS" label="Stock History" icon={History} />
-          {canManageCategoriesBrands && <TabButton id="CATEGORIES" label="Categories & Brands" icon={Tag} />}
+          {!isCashier && <TabButton id="CATEGORIES" label="Categories & Brands" icon={Tag} />}
         </div>
       </div>
 
@@ -370,10 +366,10 @@ const Inventory: React.FC = () => {
                           <span className="text-[10px] text-slate-400 mt-1">Total: {p.stock}</span>
                         </div>
                       </td>
-                      {/* 1. Always-visible action buttons (hidden for cashier) */}
+                      {/* 1. Always-visible action buttons */}
                       <td className="p-4 text-center">
+                        {!isCashier ? (
                         <div className="flex justify-center gap-1">
-                          {canManageStock && (
                           <button
                             onClick={() => handleOpenAdjustment(p)}
                             className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
@@ -381,8 +377,6 @@ const Inventory: React.FC = () => {
                           >
                             <History size={16} />
                           </button>
-                          )}
-                          {canManageProducts && (
                           <button
                             onClick={() => handleOpenEdit(p)}
                             className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors"
@@ -390,8 +384,6 @@ const Inventory: React.FC = () => {
                           >
                             <Edit2 size={16} />
                           </button>
-                          )}
-                          {canManageProducts && (
                           <button
                             onClick={() => handleDeleteRequest(p)}
                             className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
@@ -399,8 +391,10 @@ const Inventory: React.FC = () => {
                           >
                             <Trash2 size={16} />
                           </button>
-                          )}
                         </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">View only</span>
+                        )}
                       </td>
                     </tr>
                   );
