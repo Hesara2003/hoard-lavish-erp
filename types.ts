@@ -58,10 +58,34 @@ export interface StockMovement {
   productName: string;
   branchId: string;
   branchName: string;
-  type: 'IN' | 'OUT' | 'ADJUSTMENT';
+  type: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER';
   quantity: number;
-  reason: string; // e.g., "Sale", "Restock", "Damage", "Theft"
+  reason: string; // e.g., "Sale", "Restock", "Damage", "Theft", "Transfer"
   date: string;
+}
+
+export interface StockTransferItem {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  costPrice: number;
+}
+
+export interface StockTransfer {
+  id: string;
+  transferNumber: string;
+  date: string;
+  fromBranchId: string;
+  fromBranchName: string;
+  toBranchId: string;
+  toBranchName: string;
+  items: StockTransferItem[];
+  totalItems: number;
+  totalValue: number;
+  status: 'COMPLETED';
+  notes: string;
 }
 
 export interface Supplier {
