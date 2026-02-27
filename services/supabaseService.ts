@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import type { Branch, Product, Customer, SalesRecord, StockMovement, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood } from '../types';
+import type { Branch, Product, Customer, SalesRecord, StockMovement, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer } from '../types';
 
 // ============================================================
 // BRANCHES
@@ -608,4 +608,46 @@ export async function insertDamagedGood(record: DamagedGood): Promise<void> {
 export async function deleteDamagedGood(id: string): Promise<void> {
     const { error } = await supabase.from('damaged_goods').delete().eq('id', id);
     if (error) throw error;
+}
+
+// ============================================================
+// STOCK TRANSFERS
+// ============================================================
+export async function insertStockTransfer(transfer: StockTransfer): Promise<void> {
+    const { error } = await supabase.from('stock_transfers').insert({
+        transfer_number: transfer.transferNumber,
+        date: transfer.date,
+        from_branch_id: transfer.fromBranchId,
+        from_branch_name: transfer.fromBranchName,
+        to_branch_id: transfer.toBranchId,
+        to_branch_name: transfer.toBranchName,
+        items: transfer.items,
+        total_items: transfer.totalItems,
+        total_value: transfer.totalValue,
+        status: transfer.status,
+        notes: transfer.notes,
+    });
+    if (error) throw error;
+}
+
+export async function fetchStockTransfers(): Promise<StockTransfer[]> {
+    const { data, error } = await supabase
+        .from('stock_transfers')
+        .select('*')
+        .order('date', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(r => ({
+        id: r.id,
+        transferNumber: r.transfer_number,
+        date: r.date,
+        fromBranchId: r.from_branch_id,
+        fromBranchName: r.from_branch_name,
+        toBranchId: r.to_branch_id,
+        toBranchName: r.to_branch_name,
+        items: r.items,
+        totalItems: r.total_items,
+        totalValue: Number(r.total_value),
+        status: r.status,
+        notes: r.notes,
+    }));
 }
