@@ -6,9 +6,9 @@ import { SalesRecord } from '../types';
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-type TimePeriod = 'TODAY' | 'WEEK' | 'MONTH' | 'ALL';
+type TimePeriod = 'TODAY' | 'WEEK' | 'MONTH' | 'ALL' | 'CUSTOM';
 
-const isInPeriod = (dateStr: string, period: TimePeriod): boolean => {
+const isInPeriod = (dateStr: string, period: TimePeriod, dateFrom?: string, dateTo?: string): boolean => {
   if (period === 'ALL') return true;
   const d = new Date(dateStr);
   const now = new Date();
@@ -20,8 +20,23 @@ const isInPeriod = (dateStr: string, period: TimePeriod): boolean => {
     weekAgo.setDate(weekAgo.getDate() - 7);
     return d >= weekAgo;
   }
-  // MONTH
-  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  if (period === 'MONTH') {
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }
+  if (period === 'CUSTOM') {
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      from.setHours(0, 0, 0, 0);
+      if (d < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      if (d > to) return false;
+    }
+    return true;
+  }
+  return true;
 };
 
 const SalesHistory: React.FC = () => {
@@ -30,6 +45,8 @@ const SalesHistory: React.FC = () => {
   const [selectedSale, setSelectedSale] = useState<SalesRecord | null>(null);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('ALL');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   // --- Filtered Sales ---
@@ -40,12 +57,12 @@ const SalesHistory: React.FC = () => {
         sale.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (sale.customerName && sale.customerName.toLowerCase().includes(searchTerm.toLowerCase()));
       // Time period filter
-      const matchesPeriod = isInPeriod(sale.date, timePeriod);
+      const matchesPeriod = isInPeriod(sale.date, timePeriod, dateFrom, dateTo);
       // Branch filter
       const matchesBranch = branchFilter === 'ALL' || sale.branchId === branchFilter;
       return matchesSearch && matchesPeriod && matchesBranch;
     });
-  }, [salesHistory, searchTerm, timePeriod, branchFilter]);
+  }, [salesHistory, searchTerm, timePeriod, branchFilter, dateFrom, dateTo]);
 
   // --- Print only the invoice ---
   const handlePrint = () => {
@@ -114,17 +131,50 @@ const SalesHistory: React.FC = () => {
           <div className="flex items-center gap-3 flex-wrap">
             {/* Time Period Filter */}
             <div className="flex bg-slate-100 rounded-lg p-0.5">
-              {(['TODAY', 'WEEK', 'MONTH', 'ALL'] as TimePeriod[]).map(p => (
+              {(['TODAY', 'WEEK', 'MONTH', 'CUSTOM', 'ALL'] as TimePeriod[]).map(p => (
                 <button
                   key={p}
                   onClick={() => setTimePeriod(p)}
                   className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${timePeriod === p ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
                     }`}
                 >
-                  {p === 'TODAY' ? 'Today' : p === 'WEEK' ? 'This Week' : p === 'MONTH' ? 'This Month' : 'All Time'}
+                  {p === 'TODAY' ? 'Today' : p === 'WEEK' ? 'This Week' : p === 'MONTH' ? 'This Month' : p === 'CUSTOM' ? 'Custom' : 'All Time'}
                 </button>
               ))}
             </div>
+
+            {/* Custom Date Range Picker */}
+            {timePeriod === 'CUSTOM' && (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <label className="text-xs font-bold text-slate-400">From:</label>
+                  <input
+                    type="date"
+                    className="px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-amber-300"
+                    value={dateFrom}
+                    onChange={e => setDateFrom(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <label className="text-xs font-bold text-slate-400">To:</label>
+                  <input
+                    type="date"
+                    className="px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-amber-300"
+                    value={dateTo}
+                    onChange={e => setDateTo(e.target.value)}
+                  />
+                </div>
+                {(dateFrom || dateTo) && (
+                  <button
+                    onClick={() => { setDateFrom(''); setDateTo(''); }}
+                    className="text-xs text-slate-400 hover:text-red-500 px-1"
+                    title="Clear dates"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Branch Filter */}
             <div className="flex items-center gap-1">

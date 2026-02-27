@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, PieChart, Pie, Cell } from 'recharts';
-import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, FileText, AlertTriangle, Building2 } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, FileText, AlertTriangle, Building2, ArrowRightLeft } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { EXPENSE_CATEGORIES } from '../constants';
 import { Expense } from '../types';
@@ -36,7 +36,7 @@ const ConfirmDialog: React.FC<{
 );
 
 const Accounting: React.FC = () => {
-  const { salesHistory, expenses, supplierTransactions, stockTransfers, currentBranch, branches, addExpense, deleteExpense } = useStore();
+  const { salesHistory, expenses, supplierTransactions, stockTransfers, exchangeHistory, currentBranch, branches, addExpense, deleteExpense } = useStore();
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'EXPENSES'>('DASHBOARD');
   const [filterPeriod, setFilterPeriod] = useState<'ALL' | 'MONTH'>('ALL');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
@@ -65,6 +65,11 @@ const Accounting: React.FC = () => {
   const filteredSales = salesHistory.filter(s => isInPeriod(s.date));
   const totalIncome = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
 
+  // 1b. Exchange income/refunds
+  const filteredExchanges = (exchangeHistory || []).filter(e => isInPeriod(e.date));
+  const exchangeIncome = filteredExchanges.filter(e => e.difference > 0).reduce((sum, e) => sum + e.difference, 0);
+  const exchangeRefunds = filteredExchanges.filter(e => e.difference < 0).reduce((sum, e) => sum + Math.abs(e.difference), 0);
+
   // 2. Expenses (Operating Expenses) — filtered by period AND branch
   const filteredExpenses = expenses.filter(e => {
     if (!isInPeriod(e.date)) return false;
@@ -77,9 +82,17 @@ const Accounting: React.FC = () => {
   const filteredSupplierTx = supplierTransactions.filter(t => t.type === 'PAYMENT' && isInPeriod(t.date));
   const totalSupplierPayments = filteredSupplierTx.reduce((sum, t) => sum + t.amount, 0);
 
+  // 4. Stock Transfer Costs (cost price of transferred items)
+  const filteredTransfers = (stockTransfers || []).filter(t => isInPeriod(t.date));
+  const totalTransferCosts = filteredTransfers.reduce((sum, t) => {
+    const costValue = t.items.reduce((s, i) => s + i.costPrice * i.quantity, 0);
+    return sum + costValue;
+  }, 0);
+
   // Totals
-  const totalExpenses = totalOperatingExpenses + totalSupplierPayments;
-  const netProfit = totalIncome - totalExpenses;
+  const totalExpenses = totalOperatingExpenses + totalSupplierPayments + exchangeRefunds + totalTransferCosts;
+  const grossIncome = totalIncome + exchangeIncome;
+  const netProfit = grossIncome - totalExpenses;
 
   // Chart Data: Income vs Expense (Daily for current view context)
   const chartData = useMemo(() => {
@@ -97,9 +110,17 @@ const Accounting: React.FC = () => {
     filteredSales.forEach(s => addToMap(s.date, 'income', s.totalAmount));
     filteredExpenses.forEach(e => addToMap(e.date, 'expense', e.amount));
     filteredSupplierTx.forEach(t => addToMap(t.date, 'expense', t.amount));
+    filteredExchanges.forEach(e => {
+      if (e.difference > 0) addToMap(e.date, 'income', e.difference);
+      else if (e.difference < 0) addToMap(e.date, 'expense', Math.abs(e.difference));
+    });
+    filteredTransfers.forEach(t => {
+      const cost = t.items.reduce((s, i) => s + i.costPrice * i.quantity, 0);
+      if (cost > 0) addToMap(t.date, 'expense', cost);
+    });
 
     return Array.from(dataMap.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [filteredSales, filteredExpenses, filteredSupplierTx]);
+  }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredExchanges, filteredTransfers]);
 
   // Pie Chart Data: Expense Breakdown
   const expenseBreakdown = useMemo(() => {
@@ -112,9 +133,17 @@ const Accounting: React.FC = () => {
     if (totalSupplierPayments > 0) {
       map.set('Inventory/Stock', totalSupplierPayments);
     }
+    // Exchange Refunds
+    if (exchangeRefunds > 0) {
+      map.set('Exchange Refunds', exchangeRefunds);
+    }
+    // Stock Transfer Costs
+    if (totalTransferCosts > 0) {
+      map.set('Stock Transfers', totalTransferCosts);
+    }
     
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [filteredExpenses, totalSupplierPayments]);
+  }, [filteredExpenses, totalSupplierPayments, exchangeRefunds, totalTransferCosts]);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
 
@@ -142,23 +171,25 @@ const Accounting: React.FC = () => {
 
   // --- Combined Ledger ---
   const ledger = useMemo(() => {
-    const filteredTransfers = (stockTransfers || []).filter(t => isInPeriod(t.date));
     const all = [
       ...filteredSales.map(s => ({ 
-        id: s.id, date: s.date, desc: `Sale #${s.invoiceNumber}`, amount: s.totalAmount, type: 'IN', category: 'Sales' 
+        id: s.id, date: s.date, desc: `Sale #${s.invoiceNumber}`, amount: s.totalAmount, type: 'IN' as const, category: 'Sales' 
       })),
       ...filteredExpenses.map(e => ({ 
-        id: e.id, date: e.date, desc: e.description, amount: e.amount, type: 'OUT', category: e.category 
+        id: e.id, date: e.date, desc: e.description, amount: e.amount, type: 'OUT' as const, category: e.category 
       })),
       ...filteredSupplierTx.map(t => ({ 
-        id: t.id, date: t.date, desc: `Supplier Payment: ${t.supplierName}`, amount: t.amount, type: 'OUT', category: 'Inventory' 
+        id: t.id, date: t.date, desc: `Supplier Payment: ${t.supplierName}`, amount: t.amount, type: 'OUT' as const, category: 'Inventory' 
       })),
       ...filteredTransfers.map(t => ({
-        id: t.id, date: t.date, desc: `Stock Transfer ${t.transferNumber}: ${t.fromBranchName} → ${t.toBranchName} (${t.totalItems} items)`, amount: t.totalValue, type: 'TRANSFER' as const, category: 'Stock Transfer'
+        id: t.id, date: t.date, desc: `Stock Transfer ${t.transferNumber}: ${t.fromBranchName} → ${t.toBranchName} (${t.totalItems} items)`, amount: t.items.reduce((s, i) => s + i.costPrice * i.quantity, 0), type: 'OUT' as const, category: 'Stock Transfer'
+      })),
+      ...filteredExchanges.map(e => ({
+        id: e.id, date: e.date, desc: `Exchange #${e.exchangeNumber}${e.originalInvoiceNumber ? ` (Sale #${e.originalInvoiceNumber})` : ''}: ${e.description || 'Product exchange'}`, amount: Math.abs(e.difference), type: (e.difference >= 0 ? 'IN' : 'OUT') as 'IN' | 'OUT', category: 'Exchange'
       }))
     ];
     return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [filteredSales, filteredExpenses, filteredSupplierTx, stockTransfers]);
+  }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredTransfers, filteredExchanges]);
 
 
   return (
@@ -236,7 +267,8 @@ const Accounting: React.FC = () => {
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-500">Total Income</p>
-                    <h3 className="text-2xl font-bold text-emerald-600 mt-1">${totalIncome.toLocaleString()}</h3>
+                    <h3 className="text-2xl font-bold text-emerald-600 mt-1">LKR {grossIncome.toLocaleString()}</h3>
+                    <p className="text-xs text-slate-400 mt-1">Sales: LKR {totalIncome.toLocaleString()}{exchangeIncome > 0 ? ` | Exchanges: LKR ${exchangeIncome.toLocaleString()}` : ''}</p>
                   </div>
                   <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><TrendingUp size={20} /></div>
                 </div>
@@ -246,8 +278,8 @@ const Accounting: React.FC = () => {
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-500">Total Expenses</p>
-                    <h3 className="text-2xl font-bold text-rose-600 mt-1">${totalExpenses.toLocaleString()}</h3>
-                    <p className="text-xs text-slate-400 mt-1">Ops: ${totalOperatingExpenses} | Stock: ${totalSupplierPayments}</p>
+                    <h3 className="text-2xl font-bold text-rose-600 mt-1">LKR {totalExpenses.toLocaleString()}</h3>
+                    <p className="text-xs text-slate-400 mt-1">Ops: LKR {totalOperatingExpenses.toLocaleString()} | Stock: LKR {totalSupplierPayments.toLocaleString()}{totalTransferCosts > 0 ? ` | Transfers: LKR ${totalTransferCosts.toLocaleString()}` : ''}{exchangeRefunds > 0 ? ` | Refunds: LKR ${exchangeRefunds.toLocaleString()}` : ''}</p>
                   </div>
                   <div className="p-2 bg-rose-50 rounded-lg text-rose-600"><TrendingDown size={20} /></div>
                 </div>
@@ -258,7 +290,7 @@ const Accounting: React.FC = () => {
                   <div>
                     <p className="text-sm font-medium text-slate-500">Net Profit</p>
                     <h3 className={`text-2xl font-bold mt-1 ${netProfit >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
-                      ${netProfit.toLocaleString()}
+                      LKR {netProfit.toLocaleString()}
                     </h3>
                   </div>
                   <div className="p-2 bg-amber-50 rounded-lg text-amber-600"><DollarSign size={20} /></div>
@@ -313,7 +345,7 @@ const Accounting: React.FC = () => {
                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                            ))}
                          </Pie>
-                         <Tooltip formatter={(value) => `$${value}`} />
+                         <Tooltip formatter={(value) => `LKR ${value}`} />
                          <Legend />
                        </PieChart>
                      </ResponsiveContainer>
@@ -346,11 +378,11 @@ const Accounting: React.FC = () => {
                        <td className="p-4 text-slate-500 whitespace-nowrap">{new Date(item.date).toLocaleDateString()}</td>
                        <td className="p-4 font-medium text-slate-900">{item.desc}</td>
                        <td className="p-4 text-slate-600">{item.category}</td>
-                       <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : item.type === 'TRANSFER' ? 'text-indigo-600' : 'text-rose-600'}`}>
-                         {item.type === 'OUT' ? '-' : ''}{item.type === 'TRANSFER' ? '↔' : ''}${item.amount.toFixed(2)}
+                       <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                         {item.type === 'OUT' ? '-' : ''}LKR {item.amount.toFixed(2)}
                        </td>
                        <td className="p-4 text-center">
-                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${item.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : item.type === 'TRANSFER' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'}`}>
+                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${item.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                            {item.type}
                          </span>
                        </td>
@@ -388,7 +420,7 @@ const Accounting: React.FC = () => {
                         <span className="bg-slate-100 px-2 py-1 rounded text-xs font-medium">{e.category}</span>
                      </td>
                      <td className="p-4 text-slate-600">{e.branchName}</td>
-                     <td className="p-4 text-right font-bold text-slate-800">${e.amount.toFixed(2)}</td>
+                     <td className="p-4 text-right font-bold text-slate-800">LKR {e.amount.toFixed(2)}</td>
                      <td className="p-4 text-right">
                        <button 
                          onClick={() => setDeleteConfirm({ id: e.id, desc: e.description })}
@@ -429,7 +461,7 @@ const Accounting: React.FC = () => {
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Amount ($)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Amount (LKR)</label>
                   <input 
                     type="number" 
                     className="w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
