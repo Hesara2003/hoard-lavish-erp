@@ -188,6 +188,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } catch (_) {
           // Table may not exist yet — ignore
         }
+        // Fallback: if Supabase returned nothing, try localStorage
+        if (stockTransfersData.length === 0) {
+          try {
+            const savedTransfers = localStorage.getItem('hoard_stock_transfers');
+            if (savedTransfers) {
+              stockTransfersData = JSON.parse(savedTransfers);
+            }
+          } catch (_) { /* ignore parse errors */ }
+        }
 
         setBranches(branchesData);
         setProducts(productsData);
@@ -216,7 +225,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // ---- localStorage fallback persistence ----
   useEffect(() => {
-    if (useSupabase) return;
+    if (useSupabase) {
+      // Even with Supabase, persist stockTransfers to localStorage as fallback
+      // (the stock_transfers table may not exist yet if migration wasn't applied)
+      localStorage.setItem('hoard_stock_transfers', JSON.stringify(stockTransfers));
+      return;
+    }
     const data = {
       branches, salesHistory, customers, products, categories, brands,
       stockHistory, stockTransfers, suppliers, supplierTransactions, expenses, users, settings, damagedGoods
