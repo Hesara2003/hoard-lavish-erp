@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { DollarSign, ShoppingBag, TrendingUp, CreditCard, Wallet, Calendar, Trophy, Award, FileDown, BookOpen, Activity, Package, UserCheck, ArrowDownCircle, ArrowUpCircle, RefreshCw } from 'lucide-react';
+import { DollarSign, ShoppingBag, TrendingUp, CreditCard, Wallet, Calendar, Trophy, Award, FileDown, BookOpen, Activity, Package, UserCheck, ArrowDownCircle, ArrowUpCircle, RefreshCw, Eye, X, Download } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -12,7 +12,7 @@ const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const Dashboard: React.FC = () => {
-  const { salesHistory, products, expenses, supplierTransactions, stockHistory, currentUser } = useStore();
+  const { salesHistory, products, expenses, supplierTransactions, stockHistory, stockTransfers, currentUser } = useStore();
   const role = currentUser?.role || 'CASHIER';
   const isAdmin = role === 'ADMIN';
 
@@ -124,6 +124,11 @@ const Dashboard: React.FC = () => {
     return supplierTransactions.filter(t => t.type === 'PAYMENT' && matchesMonth(t.date, selectedMonth));
   }, [supplierTransactions, filterMode, selectedDate, selectedMonth]);
 
+  const filteredTransfers = useMemo(() => {
+    if (filterMode === 'daily') return stockTransfers.filter(t => matchesDate(t.date, selectedDate));
+    return stockTransfers.filter(t => matchesMonth(t.date, selectedMonth));
+  }, [stockTransfers, filterMode, selectedDate, selectedMonth]);
+
   const ledger = useMemo(() => {
     const all = [
       ...filteredSales.map(s => ({
@@ -134,10 +139,13 @@ const Dashboard: React.FC = () => {
       })),
       ...filteredSupplierTx.map(t => ({
         id: t.id, date: t.date, desc: `Supplier: ${t.supplierName}`, amount: t.amount, type: 'OUT' as const, category: 'Inventory'
+      })),
+      ...filteredTransfers.map(t => ({
+        id: t.id, date: t.date, desc: `Transfer ${t.transferNumber}: ${t.fromBranchName} → ${t.toBranchName}`, amount: t.totalValue, type: 'TRANSFER' as const, category: 'Stock Transfer'
       }))
     ];
     return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [filteredSales, filteredExpenses, filteredSupplierTx]);
+  }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredTransfers]);
 
   // --- Activity Feed ---
   const activityFeed = useMemo(() => {
@@ -176,6 +184,15 @@ const Dashboard: React.FC = () => {
           message: `Stock removed`,
           detail: `${mv.quantity} units of ${mv.productName} — ${mv.reason}`,
           color: 'rose'
+        });
+      } else if (mv.type === 'TRANSFER') {
+        items.push({
+          id: `stock-${mv.id}`,
+          date: mv.date,
+          icon: 'stock_out',
+          message: `Stock transferred`,
+          detail: `${mv.quantity} units of ${mv.productName} — ${mv.reason}`,
+          color: 'indigo'
         });
       } else if (mv.type === 'ADJUSTMENT') {
         const isEdit = mv.reason.startsWith('Product edited');
@@ -366,10 +383,31 @@ const Dashboard: React.FC = () => {
       );
     }
     
-    // Save the PDF
+    // Generate blob URL for preview instead of auto-download
     const filename = filterMode === 'daily' ? `report_${selectedDate}.pdf` : `report_${selectedMonth}.pdf`;
-    doc.save(filename);
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    setPreviewUrl(url);
+    setPreviewFilename(filename);
   };
+
+  // --- Preview State ---
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState('');
+
+  const closePreview = useCallback(() => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewFilename('');
+  }, [previewUrl]);
+
+  const downloadReport = useCallback(() => {
+    if (!previewUrl) return;
+    const a = document.createElement('a');
+    a.href = previewUrl;
+    a.download = previewFilename;
+    a.click();
+  }, [previewUrl, previewFilename]);
 
   // --- Reusable Components ---
   const StatCard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
@@ -408,14 +446,46 @@ const Dashboard: React.FC = () => {
       </div>
       <button onClick={generateReport}
         className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm"
-        title="Download analysis report">
-        <FileDown size={14} /> Report
+        title="Preview analysis report">
+        <Eye size={14} /> Report
       </button>
     </div>
   );
 
   return (
     <div className="flex-1 bg-slate-50 p-6 md:p-8 overflow-y-auto">
+
+      {/* PDF PREVIEW MODAL */}
+      {previewUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-[90vw] h-[90vh] max-w-5xl flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-lg text-white"><FileDown size={18} /></div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-lg">Report Preview</h3>
+                  <p className="text-xs text-slate-400">{previewFilename}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={downloadReport}
+                  className="flex items-center gap-1.5 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                  <Download size={16} /> Download PDF
+                </button>
+                <button onClick={closePreview}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            {/* PDF Embed */}
+            <div className="flex-1 bg-slate-200 p-2">
+              <iframe src={previewUrl} title="Report Preview" className="w-full h-full rounded-lg border-0" />
+            </div>
+          </div>
+        </div>
+      )}
       {/* PAGE HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
@@ -601,12 +671,12 @@ const Dashboard: React.FC = () => {
                     <td className="p-4">
                       <span className="bg-slate-100 px-2 py-1 rounded text-xs font-medium text-slate-600">{item.category}</span>
                     </td>
-                    <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {item.type === 'OUT' ? '-' : '+'}{fmtCurrency(item.amount)}
+                    <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : item.type === 'TRANSFER' ? 'text-indigo-600' : 'text-rose-600'}`}>
+                      {item.type === 'OUT' ? '-' : item.type === 'TRANSFER' ? '⇄ ' : '+'}{fmtCurrency(item.amount)}
                     </td>
                     <td className="p-4 text-center">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${item.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        {item.type === 'IN' ? 'Income' : 'Expense'}
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${item.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : item.type === 'TRANSFER' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'}`}>
+                        {item.type === 'IN' ? 'Income' : item.type === 'TRANSFER' ? 'Transfer' : 'Expense'}
                       </span>
                     </td>
                   </tr>
