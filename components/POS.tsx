@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, UserPlus, User, X, ScanBarcode, Printer, CheckCircle, Store, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, UserPlus, User, X, ScanBarcode, Printer, CheckCircle, Store, AlertTriangle, ArrowRightLeft, RotateCcw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { Product, Customer, SalesRecord } from '../types';
+import { Product, Customer, SalesRecord, CartItem, ExchangeRecord } from '../types';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -35,7 +35,7 @@ const AlertPopup: React.FC<{ message: string; type?: 'error' | 'warning'; onClos
 );
 
 const POS: React.FC = () => {
-  const { products, customers, cart, addToCart, removeFromCart, completeSale, clearCart, addCustomer, currentBranch } = useStore();
+  const { products, customers, cart, salesHistory, addToCart, removeFromCart, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -56,6 +56,19 @@ const POS: React.FC = () => {
   // Invoice Modal
   const [lastSale, setLastSale] = useState<SalesRecord | null>(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+
+  // Exchange State
+  const [isExchangeMode, setIsExchangeMode] = useState(false);
+  const [exchangeSaleSearch, setExchangeSaleSearch] = useState('');
+  const [selectedExchangeSale, setSelectedExchangeSale] = useState<SalesRecord | null>(null);
+  const [returnedItems, setReturnedItems] = useState<CartItem[]>([]);
+  const [exchangeNewItems, setExchangeNewItems] = useState<CartItem[]>([]);
+  const [exchangeDescription, setExchangeDescription] = useState('');
+  const [exchangeNewProductSearch, setExchangeNewProductSearch] = useState('');
+  const [lastExchange, setLastExchange] = useState<ExchangeRecord | null>(null);
+  const [isExchangeInvoiceOpen, setIsExchangeInvoiceOpen] = useState(false);
+  const [noSaleReturnItems, setNoSaleReturnItems] = useState<CartItem[]>([]); // manual stock return without sale
+  const [noSaleProductSearch, setNoSaleProductSearch] = useState('');
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -208,6 +221,146 @@ const POS: React.FC = () => {
     window.print();
   };
 
+  // === Exchange Helpers ===
+  const filteredExchangeSales = useMemo(() => {
+    if (!exchangeSaleSearch.trim()) return salesHistory.slice(0, 10);
+    const term = exchangeSaleSearch.toLowerCase();
+    return salesHistory.filter(s =>
+      s.invoiceNumber.toLowerCase().includes(term) ||
+      (s.customerName && s.customerName.toLowerCase().includes(term))
+    ).slice(0, 10);
+  }, [salesHistory, exchangeSaleSearch]);
+
+  const exchangeNewProductResults = useMemo(() => {
+    if (!exchangeNewProductSearch.trim()) return [];
+    const term = exchangeNewProductSearch.toLowerCase();
+    return products.filter(p =>
+      (p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term)) &&
+      (p.branchStock[currentBranch.id] || 0) > 0
+    ).slice(0, 8);
+  }, [products, exchangeNewProductSearch, currentBranch]);
+
+  const noSaleProductResults = useMemo(() => {
+    if (!noSaleProductSearch.trim()) return [];
+    const term = noSaleProductSearch.toLowerCase();
+    return products.filter(p =>
+      p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term)
+    ).slice(0, 8);
+  }, [products, noSaleProductSearch]);
+
+  const handleSelectReturnItem = (item: CartItem) => {
+    const existing = returnedItems.find(r => r.id === item.id);
+    if (existing) return;
+    setReturnedItems(prev => [...prev, { ...item, quantity: 1 }]);
+  };
+
+  const handleAddExchangeNewItem = (product: Product) => {
+    const existing = exchangeNewItems.find(r => r.id === product.id);
+    if (existing) {
+      setExchangeNewItems(prev => prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
+    } else {
+      setExchangeNewItems(prev => [...prev, { ...product, quantity: 1 }]);
+    }
+    setExchangeNewProductSearch('');
+  };
+
+  const handleAddNoSaleReturnItem = (product: Product) => {
+    const existing = noSaleReturnItems.find(r => r.id === product.id);
+    if (existing) return;
+    setNoSaleReturnItems(prev => [...prev, { ...product, quantity: 1 }]);
+    setNoSaleProductSearch('');
+  };
+
+  const returnedTotal = returnedItems.reduce((sum, i) => sum + i.price * i.quantity, 0)
+    + noSaleReturnItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const newItemsTotal = exchangeNewItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const exchangeDifference = newItemsTotal - returnedTotal;
+
+  const handleCompleteExchange = (method: 'Cash' | 'Card') => {
+    const allReturned = [...returnedItems, ...noSaleReturnItems];
+    if (allReturned.length === 0 && exchangeNewItems.length === 0) return;
+
+    const exchange = completeExchange({
+      originalSaleId: selectedExchangeSale?.id,
+      originalInvoiceNumber: selectedExchangeSale?.invoiceNumber,
+      returnedItems: allReturned,
+      newItems: exchangeNewItems,
+      returnedTotal,
+      newTotal: newItemsTotal,
+      difference: exchangeDifference,
+      paymentMethod: method,
+      customerId: selectedExchangeSale?.customerId,
+      customerName: selectedExchangeSale?.customerName,
+      description: exchangeDescription || 'Product Exchange',
+    });
+
+    setLastExchange(exchange);
+    setIsExchangeInvoiceOpen(true);
+    resetExchangeState();
+  };
+
+  const handlePrintExchangeInvoice = (exchange: ExchangeRecord) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const fmtC = (n: number) => `LKR ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const html = `<!DOCTYPE html><html><head><title>Exchange ${exchange.exchangeNumber}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif}body{padding:32px;color:#1e293b;max-width:500px;margin:0 auto}
+.header{text-align:center;margin-bottom:24px;border-bottom:2px dashed #e2e8f0;padding-bottom:16px}
+.title{font-size:20px;font-weight:700}.subtitle{font-size:12px;color:#64748b;margin-top:4px}
+.ex-num{font-family:monospace;font-size:12px;color:#64748b;margin-top:4px}
+.badge{display:inline-block;padding:4px 12px;background:#fef3c7;color:#92400e;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;margin-top:8px}
+.section{margin-bottom:16px}.section-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#94a3b8;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;margin-bottom:4px}th{background:#f1f5f9;color:#64748b;font-size:10px;text-transform:uppercase;padding:6px 10px;text-align:left}
+th:last-child,th:nth-child(2),th:nth-child(3){text-align:right}td{padding:6px 10px;font-size:12px;border-bottom:1px solid #f1f5f9}td:last-child,td:nth-child(2),td:nth-child(3){text-align:right}
+.totals{max-width:220px;margin-left:auto;margin-top:12px;border-top:2px solid #e2e8f0;padding-top:8px}
+.row{display:flex;justify-content:space-between;font-size:12px;color:#64748b;padding:3px 0}
+.grand{font-weight:700;font-size:16px;color:#0f172a;border-top:2px solid #0f172a;padding-top:8px;margin-top:4px}
+.grand.refund{color:#dc2626}.grand.charge{color:#166534}
+.footer{text-align:center;margin-top:24px;padding-top:12px;border-top:1px dashed #e2e8f0;font-size:10px;color:#94a3b8}
+@media print{body{padding:16px}}
+</style></head><body>
+<div class="header"><div class="title">HOARD LAVISH</div><div class="subtitle">Product Exchange</div>
+<div class="ex-num">${exchange.exchangeNumber}</div>
+<div class="badge">Exchange</div>
+<div style="font-size:11px;color:#94a3b8;margin-top:8px">${new Date(exchange.date).toLocaleString()}</div>
+${exchange.originalInvoiceNumber ? `<div style="font-size:11px;color:#64748b;margin-top:4px">Original Sale: ${exchange.originalInvoiceNumber}</div>` : ''}
+${exchange.customerName ? `<div style="font-size:12px;color:#475569;margin-top:4px">Customer: ${exchange.customerName}</div>` : ''}
+<div style="font-size:11px;color:#64748b;margin-top:4px">${exchange.branchName}</div>
+</div>
+${exchange.returnedItems.length > 0 ? `<div class="section"><div class="section-title">Returned Items</div>
+<table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>
+${exchange.returnedItems.map(i => `<tr><td>${i.name}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
+</tbody></table>
+<div class="row" style="justify-content:flex-end;font-weight:600;color:#dc2626">Return Credit: -${fmtC(exchange.returnedTotal)}</div></div>` : ''}
+${exchange.newItems.length > 0 ? `<div class="section"><div class="section-title">New Items</div>
+<table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>
+${exchange.newItems.map(i => `<tr><td>${i.name}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
+</tbody></table>
+<div class="row" style="justify-content:flex-end;font-weight:600;color:#166534">New Total: ${fmtC(exchange.newTotal)}</div></div>` : ''}
+<div class="totals">
+<div class="row"><span>Returned Value</span><span>-${fmtC(exchange.returnedTotal)}</span></div>
+<div class="row"><span>New Items Value</span><span>${fmtC(exchange.newTotal)}</span></div>
+<div class="grand ${exchange.difference < 0 ? 'refund' : 'charge'}"><span>${exchange.difference >= 0 ? 'Customer Pays' : 'Customer Credit'}</span><span>${fmtC(Math.abs(exchange.difference))}</span></div>
+<div class="row" style="margin-top:4px"><span>Payment</span><span>${exchange.paymentMethod}</span></div>
+</div>
+${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;background:#f8fafc;border-radius:6px;font-size:11px;color:#64748b"><strong>Note:</strong> ${exchange.description}</div>` : ''}
+<div class="footer">Thank you — Hoard Lavish ERP</div>
+<script>window.onload=function(){window.print();}</script></body></html>`;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const resetExchangeState = () => {
+    setSelectedExchangeSale(null);
+    setReturnedItems([]);
+    setExchangeNewItems([]);
+    setExchangeDescription('');
+    setExchangeNewProductSearch('');
+    setNoSaleReturnItems([]);
+    setNoSaleProductSearch('');
+    setExchangeSaleSearch('');
+  };
+
   return (
     <div className="flex h-full bg-slate-50 overflow-hidden relative">
       {/* Product Grid Area */}
@@ -276,9 +429,17 @@ const POS: React.FC = () => {
                 )}
               </div>
             </div>
-            <div className="ml-4 flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
-              <Store size={14} />
-              {currentBranch.name}
+            <div className="ml-4 flex items-center gap-2">
+              <button
+                onClick={() => { setIsExchangeMode(!isExchangeMode); if (isExchangeMode) resetExchangeState(); }}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${isExchangeMode ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'}`}
+              >
+                <ArrowRightLeft size={14} /> Exchange
+              </button>
+              <div className="flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
+                <Store size={14} />
+                {currentBranch.name}
+              </div>
             </div>
           </div>
 
@@ -656,6 +817,357 @@ const POS: React.FC = () => {
           type={alertPopup.type}
           onClose={() => setAlertPopup(null)}
         />
+      )}
+
+      {/* Exchange Mode Panel */}
+      {isExchangeMode && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-amber-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 rounded-full text-amber-600"><ArrowRightLeft size={20} /></div>
+                <div>
+                  <h3 className="font-bold text-slate-800">Product Exchange</h3>
+                  <p className="text-xs text-slate-500">Return old products and issue new ones</p>
+                </div>
+              </div>
+              <button onClick={() => { setIsExchangeMode(false); resetExchangeState(); }} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Step 1: Select Previous Sale (Optional) */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                  <RotateCcw size={14} className="text-amber-500" />
+                  Step 1: Select Original Sale <span className="text-xs font-normal text-slate-400">(optional)</span>
+                </h4>
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <input
+                    type="text"
+                    placeholder="Search by invoice # or customer name..."
+                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    value={exchangeSaleSearch}
+                    onChange={e => setExchangeSaleSearch(e.target.value)}
+                  />
+                </div>
+
+                {/* Sale suggestions */}
+                <div className="max-h-36 overflow-y-auto space-y-1">
+                  {filteredExchangeSales.map(sale => (
+                    <button
+                      key={sale.id}
+                      onClick={() => { setSelectedExchangeSale(sale); setReturnedItems([]); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-sm transition-colors ${selectedExchangeSale?.id === sale.id ? 'bg-amber-100 border border-amber-300' : 'hover:bg-white border border-transparent'}`}
+                    >
+                      <div>
+                        <span className="font-mono text-xs text-amber-600 font-bold">{sale.invoiceNumber}</span>
+                        <span className="text-slate-600 ml-2">{sale.customerName || 'Walk-in'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold text-slate-800">{fmtCurrency(sale.totalAmount)}</span>
+                        <span className="text-[10px] text-slate-400 ml-2">{new Date(sale.date).toLocaleDateString()}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {selectedExchangeSale && (
+                  <div className="mt-3 p-3 bg-white rounded-lg border border-amber-200">
+                    <p className="text-xs font-bold text-slate-500 uppercase mb-2">Select items to return from {selectedExchangeSale.invoiceNumber}</p>
+                    <div className="space-y-1">
+                      {selectedExchangeSale.items.map((item, idx) => {
+                        const isSelected = returnedItems.some(r => r.id === item.id);
+                        return (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50">
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => isSelected ? setReturnedItems(prev => prev.filter(r => r.id !== item.id)) : handleSelectReturnItem(item)}
+                                className="w-4 h-4 rounded border-slate-300 accent-amber-500"
+                              />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                                <p className="text-xs text-slate-400">{fmtCurrency(item.price)} each</p>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-slate-500">Qty:</label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={item.quantity}
+                                  value={returnedItems.find(r => r.id === item.id)?.quantity || 1}
+                                  onChange={e => setReturnedItems(prev => prev.map(r => r.id === item.id ? { ...r, quantity: Math.min(item.quantity, Math.max(1, Number(e.target.value))) } : r))}
+                                  className="w-14 p-1 border border-slate-200 rounded text-xs text-center"
+                                />
+                                <span className="text-xs text-slate-400">/ {item.quantity}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* No-Sale Return (add back stock) */}
+              {!selectedExchangeSale && (
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                    <RotateCcw size={14} className="text-blue-500" />
+                    Return Items Without Sale <span className="text-xs font-normal text-slate-400">(adds stock back)</span>
+                  </h4>
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="Search product to return..."
+                      className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+                      value={noSaleProductSearch}
+                      onChange={e => setNoSaleProductSearch(e.target.value)}
+                    />
+                    {noSaleProductResults.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-30 max-h-36 overflow-y-auto">
+                        {noSaleProductResults.map(p => (
+                          <button key={p.id} onMouseDown={() => handleAddNoSaleReturnItem(p)} className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors text-left text-sm">
+                            <span className="text-slate-700">{p.name}</span>
+                            <span className="text-xs text-slate-500">{fmtCurrency(p.price)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {noSaleReturnItems.length > 0 && (
+                    <div className="space-y-1 mt-2">
+                      {noSaleReturnItems.map(item => (
+                        <div key={item.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100">
+                          <div>
+                            <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                            <p className="text-xs text-slate-400">{fmtCurrency(item.price)}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.quantity}
+                              onChange={e => setNoSaleReturnItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(1, Number(e.target.value)) } : i))}
+                              className="w-14 p-1 border border-slate-200 rounded text-xs text-center"
+                            />
+                            <button onClick={() => setNoSaleReturnItems(prev => prev.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600"><X size={14} /></button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 2: Select New Product */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                  <Plus size={14} className="text-emerald-500" />
+                  Step 2: Add New Products
+                </h4>
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <input
+                    type="text"
+                    placeholder="Search new product to exchange..."
+                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                    value={exchangeNewProductSearch}
+                    onChange={e => setExchangeNewProductSearch(e.target.value)}
+                  />
+                  {exchangeNewProductResults.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-30 max-h-40 overflow-y-auto">
+                      {exchangeNewProductResults.map(p => (
+                        <button key={p.id} onMouseDown={() => handleAddExchangeNewItem(p)} className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors text-left text-sm">
+                          <div>
+                            <span className="text-slate-700">{p.name}</span>
+                            <span className="text-xs text-slate-400 ml-2">{p.sku}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-bold text-slate-800">{fmtCurrency(p.price)}</span>
+                            <span className="text-xs text-emerald-600 ml-2">{p.branchStock[currentBranch.id] || 0} in stock</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {exchangeNewItems.length > 0 && (
+                  <div className="space-y-1">
+                    {exchangeNewItems.map(item => (
+                      <div key={item.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                          <p className="text-xs text-slate-400">{fmtCurrency(item.price)} each</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center bg-slate-100 rounded p-0.5">
+                            <button onClick={() => setExchangeNewItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(1, i.quantity - 1) } : i))} className="p-1 hover:bg-white rounded"><Minus size={10} /></button>
+                            <span className="text-xs font-bold w-6 text-center">{item.quantity}</span>
+                            <button onClick={() => setExchangeNewItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))} className="p-1 hover:bg-white rounded"><Plus size={10} /></button>
+                          </div>
+                          <span className="text-sm font-bold text-slate-800 w-24 text-right">{fmtCurrency(item.price * item.quantity)}</span>
+                          <button onClick={() => setExchangeNewItems(prev => prev.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600"><X size={14} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Exchange Note / Reason</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Wrong size, customer preference..."
+                  className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-300"
+                  value={exchangeDescription}
+                  onChange={e => setExchangeDescription(e.target.value)}
+                />
+              </div>
+
+              {/* Exchange Summary */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <h4 className="text-sm font-bold text-slate-700 mb-3">Exchange Summary</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-slate-500">
+                    <span>Returned Items Value</span>
+                    <span className="text-red-600 font-medium">- {fmtCurrency(returnedTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-500">
+                    <span>New Items Value</span>
+                    <span className="text-emerald-600 font-medium">{fmtCurrency(newItemsTotal)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-3 border-t border-slate-200">
+                    <span className="font-bold text-slate-900">{exchangeDifference >= 0 ? 'Customer Pays' : 'Customer Credit/Refund'}</span>
+                    <span className={`text-xl font-bold ${exchangeDifference >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {fmtCurrency(Math.abs(exchangeDifference))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer with action buttons */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+              <button onClick={() => { setIsExchangeMode(false); resetExchangeState(); }} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm">Cancel</button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleCompleteExchange('Cash')}
+                  disabled={(returnedItems.length === 0 && noSaleReturnItems.length === 0) && exchangeNewItems.length === 0}
+                  className="flex items-center gap-2 px-5 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 disabled:opacity-40 transition-colors"
+                >
+                  <Banknote size={16} /> Cash
+                </button>
+                <button
+                  onClick={() => handleCompleteExchange('Card')}
+                  disabled={(returnedItems.length === 0 && noSaleReturnItems.length === 0) && exchangeNewItems.length === 0}
+                  className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-40 transition-colors"
+                >
+                  <CreditCard size={16} /> Complete Exchange
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exchange Invoice Modal */}
+      {isExchangeInvoiceOpen && lastExchange && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 bg-amber-500 text-white flex justify-between items-center">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="text-amber-100" size={24} />
+                  <h2 className="text-xl font-bold">Exchange Completed</h2>
+                </div>
+                <p className="text-amber-100 text-sm mt-1">{lastExchange.exchangeNumber}</p>
+              </div>
+              <button onClick={() => setIsExchangeInvoiceOpen(false)} className="text-amber-200 hover:text-white"><X size={24} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 bg-slate-50">
+              <div className="text-center mb-6">
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">HOARD LAVISH</h1>
+                <p className="text-slate-500 text-sm mt-1">Product Exchange</p>
+                <p className="text-slate-400 text-xs mt-1">{new Date(lastExchange.date).toLocaleString()}</p>
+                <p className="text-slate-400 text-xs font-bold">{lastExchange.branchName}</p>
+                {lastExchange.originalInvoiceNumber && (
+                  <p className="text-xs text-amber-600 mt-1">Original: {lastExchange.originalInvoiceNumber}</p>
+                )}
+              </div>
+
+              {lastExchange.returnedItems.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-bold text-red-500 uppercase mb-2">Returned Items</p>
+                  {lastExchange.returnedItems.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-sm py-1">
+                      <span className="text-slate-600">{item.quantity}x {item.name}</span>
+                      <span className="text-red-500">-{fmtCurrency(item.price * item.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {lastExchange.newItems.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-bold text-emerald-500 uppercase mb-2">New Items</p>
+                  {lastExchange.newItems.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-sm py-1">
+                      <span className="text-slate-600">{item.quantity}x {item.name}</span>
+                      <span className="text-emerald-600">{fmtCurrency(item.price * item.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="border-t border-slate-200 pt-4 space-y-2">
+                <div className="flex justify-between text-sm text-slate-500">
+                  <span>Returned Value</span>
+                  <span>-{fmtCurrency(lastExchange.returnedTotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-slate-500">
+                  <span>New Items Value</span>
+                  <span>{fmtCurrency(lastExchange.newTotal)}</span>
+                </div>
+                <div className={`flex justify-between text-lg font-bold pt-2 border-t border-slate-200 mt-2 ${lastExchange.difference >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  <span>{lastExchange.difference >= 0 ? 'Customer Pays' : 'Customer Credit'}</span>
+                  <span>{fmtCurrency(Math.abs(lastExchange.difference))}</span>
+                </div>
+              </div>
+
+              {lastExchange.description && (
+                <div className="mt-4 p-3 bg-amber-50 rounded-lg text-xs text-amber-700">
+                  <strong>Note:</strong> {lastExchange.description}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 flex gap-3 bg-white">
+              <button
+                onClick={() => handlePrintExchangeInvoice(lastExchange)}
+                className="flex-1 flex items-center justify-center gap-2 bg-amber-500 text-white py-3 rounded-xl hover:bg-amber-600 transition-colors font-medium"
+              >
+                <Printer size={18} /> Print Exchange Receipt
+              </button>
+              <button
+                onClick={() => setIsExchangeInvoiceOpen(false)}
+                className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-medium transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

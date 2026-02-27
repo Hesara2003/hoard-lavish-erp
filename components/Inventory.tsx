@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit2, AlertCircle, Trash2, Search, Filter, History, Box, Tag, ArrowUpRight, ArrowDownRight, Save, X, Building2, AlertTriangle, Palette, Ruler, ArrowRightLeft, FileText, Printer, ChevronDown, ChevronUp, Minus } from 'lucide-react';
+import { Plus, Edit2, AlertCircle, Trash2, Search, Filter, History, Box, Tag, ArrowUpRight, ArrowDownRight, Save, X, Building2, AlertTriangle, Palette, Ruler, ArrowRightLeft, FileText, Printer, ChevronDown, ChevronUp, Minus, Barcode } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product, StockTransferItem, StockTransfer } from '../types';
 
@@ -91,6 +91,14 @@ const Inventory: React.FC = () => {
   const [completedTransfer, setCompletedTransfer] = useState<StockTransfer | null>(null);
   const [showTransferHistory, setShowTransferHistory] = useState(true);
 
+  // Custom color state
+  const [customColors, setCustomColors] = useState<string[]>([]);
+  const [addingColorFor, setAddingColorFor] = useState<string | null>(null);
+  const [newColorName, setNewColorName] = useState('');
+
+  // All available colors (built-in + custom)
+  const allColors = [...AVAILABLE_COLORS, ...customColors];
+
   // Filtering
   const filteredProducts = useMemo(() => {
     let result = products;
@@ -123,6 +131,8 @@ const Inventory: React.FC = () => {
     });
     setUseVariations(false);
     setVariations([]);
+    setAddingColorFor(null);
+    setNewColorName('');
     setIsProductModalOpen(true);
   };
 
@@ -130,6 +140,8 @@ const Inventory: React.FC = () => {
     setEditingProduct({ ...product });
     setUseVariations(false);
     setVariations([]);
+    setAddingColorFor(null);
+    setNewColorName('');
     setIsProductModalOpen(true);
   };
 
@@ -179,12 +191,15 @@ const Inventory: React.FC = () => {
       });
     } else {
       // Single product (edit or non-variation add)
+      const branchStock = editingProduct.branchStock || {};
+      const totalStock = Object.values(branchStock).reduce((sum: number, v) => sum + (Number(v) || 0), 0);
       const productData = {
         ...editingProduct,
         price: Number(editingProduct.price),
         costPrice: Number(editingProduct.costPrice),
         minStockLevel: Number(editingProduct.minStockLevel),
-        branchStock: editingProduct.branchStock || {}
+        branchStock,
+        stock: totalStock,
       } as Product;
 
       if (productData.id) {
@@ -393,6 +408,68 @@ const Inventory: React.FC = () => {
     }
     return result;
   }, [products, currentBranch, transferSearchTerm]);
+
+  // --- Barcode Helpers ---
+  const generateBarcode = (): string => {
+    const prefix = '200';
+    let code = prefix;
+    for (let i = 0; i < 9; i++) {
+      code += Math.floor(Math.random() * 10).toString();
+    }
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(code[i]) * (i % 2 === 0 ? 1 : 3);
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    return code + checkDigit.toString();
+  };
+
+  const handlePrintBarcode = () => {
+    if (!editingProduct) return;
+    const barcode = editingProduct.barcode || '';
+    const name = editingProduct.name || 'Product';
+    const price = Number(editingProduct.price) || 0;
+    const color = editingProduct.color || '';
+    const size = editingProduct.size || '';
+    if (!barcode) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;">';
+    barsHtml += '<div style="width:3px;height:55px;background:#000;"></div><div style="width:1px;height:55px;background:#fff;"></div><div style="width:1px;height:55px;background:#000;"></div><div style="width:2px;height:55px;background:#fff;"></div>';
+    for (let i = 0; i < barcode.length; i++) {
+      const d = parseInt(barcode[i]) || 0;
+      barsHtml += '<div style="width:' + ((d % 3) + 1) + 'px;height:50px;background:#000;"></div>';
+      barsHtml += '<div style="width:' + ((d % 2) + 1) + 'px;height:50px;background:#fff;"></div>';
+      barsHtml += '<div style="width:' + (((d + 1) % 3) + 1) + 'px;height:50px;background:#000;"></div>';
+      barsHtml += '<div style="width:1px;height:50px;background:#fff;"></div>';
+    }
+    barsHtml += '<div style="width:1px;height:55px;background:#000;"></div><div style="width:2px;height:55px;background:#fff;"></div><div style="width:3px;height:55px;background:#000;"></div>';
+    barsHtml += '</div>';
+
+    const variantParts = [color, size].filter(Boolean).join(' / ');
+    const html = '<!DOCTYPE html><html><head><title>Barcode Tag</title><style>' +
+      '* { margin:0; padding:0; box-sizing:border-box; }' +
+      'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; background:#f5f5f5; }' +
+      '.tag { width:280px; background:#fff; border:2px solid #000; border-radius:8px; padding:16px; text-align:center; }' +
+      '.store-name { font-size:10px; font-weight:700; color:#666; letter-spacing:2px; text-transform:uppercase; margin-bottom:8px; }' +
+      '.product-name { font-size:14px; font-weight:700; color:#000; margin-bottom:4px; line-height:1.3; }' +
+      '.variant { font-size:11px; color:#555; margin-bottom:8px; }' +
+      '.price { font-size:22px; font-weight:900; color:#000; margin-bottom:12px; }' +
+      '.barcode-visual { margin-bottom:6px; }' +
+      '.barcode-number { font-family:monospace; font-size:14px; letter-spacing:3px; color:#000; margin-bottom:4px; }' +
+      '@media print { body { background:#fff; } .tag { border:1px solid #ccc; } }' +
+      '</style></head><body><div class="tag">' +
+      '<div class="store-name">Hoard Lavish</div>' +
+      '<div class="product-name">' + name + '</div>' +
+      (variantParts ? '<div class="variant">' + variantParts + '</div>' : '') +
+      '<div class="price">' + CUR + ' ' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</div>' +
+      '<div class="barcode-visual">' + barsHtml + '</div>' +
+      '<div class="barcode-number">' + barcode + '</div>' +
+      '</div><script>window.onload=function(){window.print();}<\/script></body></html>';
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
 
   // Tab button component
   const TabButton = ({ id, label, icon: Icon }: { id: InventoryTab, label: string, icon: any }) => (
@@ -1046,14 +1123,37 @@ const Inventory: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Color</label>
-                    <select
-                      className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
-                      value={editingProduct.color || ''}
-                      onChange={e => setEditingProduct({ ...editingProduct, color: e.target.value })}
-                    >
-                      <option value="">No Color</option>
-                      {AVAILABLE_COLORS.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    {addingColorFor === 'edit' ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Enter new color name..."
+                          className="flex-1 p-2 border border-indigo-300 rounded-lg outline-none text-sm focus:ring-2 focus:ring-indigo-200"
+                          value={newColorName}
+                          onChange={e => setNewColorName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && newColorName.trim()) {
+                              if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]);
+                              setEditingProduct({ ...editingProduct, color: newColorName.trim() });
+                              setNewColorName(''); setAddingColorFor(null);
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <button onClick={() => { if (newColorName.trim()) { if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]); setEditingProduct({ ...editingProduct, color: newColorName.trim() }); setNewColorName(''); setAddingColorFor(null); } }} className="px-3 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium">Add</button>
+                        <button onClick={() => { setAddingColorFor(null); setNewColorName(''); }} className="px-3 py-2 text-slate-500 hover:bg-slate-100 rounded-lg text-xs">Cancel</button>
+                      </div>
+                    ) : (
+                      <select
+                        className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
+                        value={editingProduct.color || ''}
+                        onChange={e => { if (e.target.value === '__NEW__') { setAddingColorFor('edit'); setNewColorName(''); } else { setEditingProduct({ ...editingProduct, color: e.target.value }); } }}
+                      >
+                        <option value="">No Color</option>
+                        {allColors.map(c => <option key={c} value={c}>{c}</option>)}
+                        <option value="__NEW__">+ Add New Color...</option>
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Size</label>
@@ -1083,6 +1183,37 @@ const Inventory: React.FC = () => {
                       value={editingProduct.price || 0}
                       onChange={e => setEditingProduct({ ...editingProduct, price: Number(e.target.value) })}
                     />
+                  </div>
+                  {/* Barcode Section */}
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode</label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                          type="text"
+                          placeholder="Enter or generate barcode..."
+                          className="w-full pl-10 p-2 border border-slate-200 rounded-lg outline-none font-mono"
+                          value={editingProduct.barcode || ''}
+                          onChange={e => setEditingProduct({ ...editingProduct, barcode: e.target.value })}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingProduct({ ...editingProduct, barcode: generateBarcode() })}
+                        className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                      >
+                        Generate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePrintBarcode}
+                        disabled={!editingProduct.barcode}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Printer size={14} /> Print Tag
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -1120,14 +1251,37 @@ const Inventory: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Color</label>
-                          <select
-                            className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
-                            value={editingProduct.color || ''}
-                            onChange={e => setEditingProduct({ ...editingProduct, color: e.target.value })}
-                          >
-                            <option value="">No Color</option>
-                            {AVAILABLE_COLORS.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
+                          {addingColorFor === 'new' ? (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="Enter new color name..."
+                                className="flex-1 p-2 border border-indigo-300 rounded-lg outline-none text-sm focus:ring-2 focus:ring-indigo-200"
+                                value={newColorName}
+                                onChange={e => setNewColorName(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && newColorName.trim()) {
+                                    if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]);
+                                    setEditingProduct({ ...editingProduct, color: newColorName.trim() });
+                                    setNewColorName(''); setAddingColorFor(null);
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <button onClick={() => { if (newColorName.trim()) { if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]); setEditingProduct({ ...editingProduct, color: newColorName.trim() }); setNewColorName(''); setAddingColorFor(null); } }} className="px-3 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium">Add</button>
+                              <button onClick={() => { setAddingColorFor(null); setNewColorName(''); }} className="px-3 py-2 text-slate-500 hover:bg-slate-100 rounded-lg text-xs">Cancel</button>
+                            </div>
+                          ) : (
+                            <select
+                              className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
+                              value={editingProduct.color || ''}
+                              onChange={e => { if (e.target.value === '__NEW__') { setAddingColorFor('new'); setNewColorName(''); } else { setEditingProduct({ ...editingProduct, color: e.target.value }); } }}
+                            >
+                              <option value="">No Color</option>
+                              {allColors.map(c => <option key={c} value={c}>{c}</option>)}
+                              <option value="__NEW__">+ Add New Color...</option>
+                            </select>
+                          )}
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Size</label>
@@ -1139,6 +1293,47 @@ const Inventory: React.FC = () => {
                             <option value="">No Size</option>
                             {AVAILABLE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Initial Stock ({currentBranch.name})</label>
+                          <input
+                            type="number"
+                            min="0"
+                            className="w-full p-2 border border-slate-200 rounded-lg outline-none"
+                            value={editingProduct.branchStock?.[currentBranch.id] || 0}
+                            onChange={e => setEditingProduct({ ...editingProduct, branchStock: { ...editingProduct.branchStock, [currentBranch.id]: Number(e.target.value) } })}
+                          />
+                        </div>
+                        {/* Barcode Section */}
+                        <div className="col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode</label>
+                          <div className="flex gap-2">
+                            <div className="relative flex-1">
+                              <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                              <input
+                                type="text"
+                                placeholder="Enter or generate barcode..."
+                                className="w-full pl-10 p-2 border border-slate-200 rounded-lg outline-none font-mono"
+                                value={editingProduct.barcode || ''}
+                                onChange={e => setEditingProduct({ ...editingProduct, barcode: e.target.value })}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setEditingProduct({ ...editingProduct, barcode: generateBarcode() })}
+                              className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                            >
+                              Generate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handlePrintBarcode}
+                              disabled={!editingProduct.barcode}
+                              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <Printer size={14} /> Print Tag
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -1181,13 +1376,36 @@ const Inventory: React.FC = () => {
 
                         {variations.map((v, idx) => (
                           <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            <select
-                              className="col-span-2 p-1.5 border border-slate-200 rounded text-xs bg-white"
-                              value={v.color}
-                              onChange={e => handleUpdateVariation(idx, 'color', e.target.value)}
-                            >
-                              {AVAILABLE_COLORS.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            {addingColorFor === `var-${idx}` ? (
+                              <div className="col-span-2 flex gap-1">
+                                <input
+                                  type="text"
+                                  placeholder="Color name..."
+                                  className="flex-1 p-1.5 border border-indigo-300 rounded text-xs focus:ring-1 focus:ring-indigo-200 outline-none"
+                                  value={newColorName}
+                                  onChange={e => setNewColorName(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && newColorName.trim()) {
+                                      if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]);
+                                      handleUpdateVariation(idx, 'color', newColorName.trim());
+                                      setNewColorName(''); setAddingColorFor(null);
+                                    }
+                                  }}
+                                  autoFocus
+                                />
+                                <button onClick={() => { if (newColorName.trim()) { if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]); handleUpdateVariation(idx, 'color', newColorName.trim()); setNewColorName(''); setAddingColorFor(null); } }} className="px-2 py-1 bg-slate-900 text-white rounded text-[10px] font-medium">OK</button>
+                                <button onClick={() => { setAddingColorFor(null); setNewColorName(''); }} className="px-2 py-1 text-slate-400 hover:bg-slate-100 rounded text-[10px]">✕</button>
+                              </div>
+                            ) : (
+                              <select
+                                className="col-span-2 p-1.5 border border-slate-200 rounded text-xs bg-white"
+                                value={v.color}
+                                onChange={e => { if (e.target.value === '__NEW__') { setAddingColorFor(`var-${idx}`); setNewColorName(''); } else { handleUpdateVariation(idx, 'color', e.target.value); } }}
+                              >
+                                {allColors.map(c => <option key={c} value={c}>{c}</option>)}
+                                <option value="__NEW__">+ New Color...</option>
+                              </select>
+                            )}
                             <select
                               className="col-span-2 p-1.5 border border-slate-200 rounded text-xs bg-white"
                               value={v.size}

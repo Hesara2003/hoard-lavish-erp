@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Product, CartItem, SalesRecord, ViewState, Customer, StockMovement, Branch, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer, StockTransferItem } from '../types';
+import { Product, CartItem, SalesRecord, ViewState, Customer, StockMovement, Branch, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer, StockTransferItem, ExchangeRecord } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_CUSTOMERS, INITIAL_CATEGORIES, INITIAL_BRANDS, INITIAL_BRANCHES, INITIAL_SUPPLIERS, INITIAL_EXPENSES, INITIAL_USERS, INITIAL_SETTINGS } from '../constants';
 import * as db from '../services/supabaseService';
 import { calculateCartTotals } from '../utils/cart';
@@ -12,6 +12,7 @@ interface StoreContextType {
   salesHistory: SalesRecord[];
   stockHistory: StockMovement[];
   stockTransfers: StockTransfer[];
+  exchangeHistory: ExchangeRecord[];
   categories: string[];
   brands: string[];
   branches: Branch[];
@@ -45,6 +46,7 @@ interface StoreContextType {
   clearCart: () => void;
 
   completeSale: (paymentMethod: SalesRecord['paymentMethod'], discount: number, customerId?: string) => SalesRecord;
+  completeExchange: (exchange: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>) => ExchangeRecord;
   adjustStock: (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => void;
   transferStock: (toBranchId: string, items: StockTransferItem[], notes: string) => StockTransfer;
 
@@ -97,6 +99,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [salesHistory, setSalesHistory] = useState<SalesRecord[]>([]);
   const [stockHistory, setStockHistory] = useState<StockMovement[]>([]);
   const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>([]);
+  const [exchangeHistory, setExchangeHistory] = useState<ExchangeRecord[]>([]);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [brands, setBrands] = useState<string[]>(INITIAL_BRANDS);
   const [suppliers, setSuppliers] = useState<Supplier[]>(INITIAL_SUPPLIERS);
@@ -433,6 +436,76 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // ============================================================
+  // EXCHANGE
+  // ============================================================
+  const completeExchange = (exchangeData: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>): ExchangeRecord => {
+    const exchangeNumber = `EX-${Date.now().toString(36).toUpperCase()}`;
+    const exchange: ExchangeRecord = {
+      ...exchangeData,
+      id: Math.random().toString(36).substr(2, 9),
+      exchangeNumber,
+      date: new Date().toISOString(),
+      branchId: currentBranch.id,
+      branchName: currentBranch.name,
+    };
+
+    // Restock returned items
+    const newStockLogs: StockMovement[] = [];
+    let updatedProducts = [...products];
+
+    exchange.returnedItems.forEach(item => {
+      updatedProducts = updatedProducts.map(p => {
+        if (p.id !== item.id) return p;
+        const curStock = p.branchStock[currentBranch.id] || 0;
+        const newStock = curStock + item.quantity;
+        const updatedBS = { ...p.branchStock, [currentBranch.id]: newStock };
+        const totalStock = Object.values(updatedBS).reduce((a: number, b: number) => a + b, 0);
+        return { ...p, branchStock: updatedBS, stock: totalStock };
+      });
+      newStockLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        productId: item.id,
+        productName: item.name,
+        branchId: currentBranch.id,
+        branchName: currentBranch.name,
+        type: 'IN',
+        quantity: item.quantity,
+        reason: `Exchange Return (${exchangeNumber})`,
+        date: new Date().toISOString(),
+      });
+    });
+
+    // Deduct new items stock
+    exchange.newItems.forEach(item => {
+      updatedProducts = updatedProducts.map(p => {
+        if (p.id !== item.id) return p;
+        const curStock = p.branchStock[currentBranch.id] || 0;
+        const newStock = Math.max(0, curStock - item.quantity);
+        const updatedBS = { ...p.branchStock, [currentBranch.id]: newStock };
+        const totalStock = Object.values(updatedBS).reduce((a: number, b: number) => a + b, 0);
+        return { ...p, branchStock: updatedBS, stock: totalStock };
+      });
+      newStockLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        productId: item.id,
+        productName: item.name,
+        branchId: currentBranch.id,
+        branchName: currentBranch.name,
+        type: 'OUT',
+        quantity: item.quantity,
+        reason: `Exchange Issue (${exchangeNumber})`,
+        date: new Date().toISOString(),
+      });
+    });
+
+    setProducts(updatedProducts);
+    setStockHistory(prev => [...newStockLogs, ...prev]);
+    setExchangeHistory(prev => [exchange, ...prev]);
+
+    return exchange;
+  };
+
+  // ============================================================
   // STOCK ADJUSTMENT
   // ============================================================
   const adjustStock = (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => {
@@ -713,13 +786,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <StoreContext.Provider value={{
-      products, customers, cart, salesHistory, stockHistory, stockTransfers, categories, brands, branches, suppliers, supplierTransactions, expenses, damagedGoods, users, settings,
+      products, customers, cart, salesHistory, stockHistory, stockTransfers, exchangeHistory, categories, brands, branches, suppliers, supplierTransactions, expenses, damagedGoods, users, settings,
       currentBranch, currentUser, currentView, isLoading, dbError,
       setBranch, addBranch, updateBranch,
       addProduct, updateProduct, deleteProduct,
       addCustomer, updateCustomer, deleteCustomer,
       addToCart, removeFromCart, clearCart,
-      completeSale, adjustStock, transferStock,
+      completeSale, completeExchange, adjustStock, transferStock,
       addCategory, removeCategory, addBrand, removeBrand,
       addSupplier, updateSupplier, deleteSupplier, addSupplierTransaction,
       addExpense, deleteExpense,

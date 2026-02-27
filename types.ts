@@ -20,6 +20,7 @@ export interface Product {
   imageUrl?: string;
   color?: string;
   size?: string;
+  barcode?: string;
 }
 
 export interface CartItem extends Product {
@@ -146,6 +147,25 @@ export interface AppSettings {
   currencySymbol: string;
   taxRate: number;
   enableLowStockAlerts: boolean;
+}
+
+export interface ExchangeRecord {
+  id: string;
+  exchangeNumber: string;
+  date: string;
+  originalSaleId?: string;
+  originalInvoiceNumber?: string;
+  returnedItems: CartItem[];
+  newItems: CartItem[];
+  returnedTotal: number;
+  newTotal: number;
+  difference: number; // positive = customer pays more, negative = store refunds/credit
+  paymentMethod: 'Cash' | 'Card' | 'Digital';
+  customerId?: string;
+  customerName?: string;
+  branchId: string;
+  branchName: string;
+  description: string;
 }
 
 export type ViewState = 'DASHBOARD' | 'POS' | 'INVENTORY' | 'CUSTOMERS' | 'HISTORY' | 'BRANCHES' | 'SUPPLIERS' | 'ACCOUNTING' | 'SETTINGS';
