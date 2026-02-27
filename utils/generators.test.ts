@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateInvoiceNumber } from './generators';
+import { generateInvoiceNumber, generateTransferNumber } from './generators';
 
 describe('Generators Utility', () => {
     describe('generateInvoiceNumber', () => {
@@ -33,6 +33,33 @@ describe('Generators Utility', () => {
             const invoice = generateInvoiceNumber();
             expect(invoice).toHaveLength(10);
             expect(invoice).toMatch(/^INV-\d{6}$/); // Match format exactly
+        });
+    });
+
+    describe('generateTransferNumber', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('should generate a transfer number with the correct prefix', () => {
+            const transfer = generateTransferNumber();
+            expect(transfer.startsWith('TRF-')).toBe(true);
+        });
+
+        it('should append the last 6 digits of the current timestamp', () => {
+            vi.setSystemTime(new Date(1678886400000));
+            const transfer = generateTransferNumber();
+            expect(transfer).toBe('TRF-400000');
+        });
+
+        it('should be exactly 10 characters long (TRF- + 6 digits)', () => {
+            const transfer = generateTransferNumber();
+            expect(transfer).toHaveLength(10);
+            expect(transfer).toMatch(/^TRF-\d{6}$/);
         });
     });
 });

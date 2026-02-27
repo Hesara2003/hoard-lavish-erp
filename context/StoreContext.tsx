@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Product, CartItem, SalesRecord, ViewState, Customer, StockMovement, Branch, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood } from '../types';
+import { Product, CartItem, SalesRecord, ViewState, Customer, StockMovement, Branch, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer, StockTransferItem } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_CUSTOMERS, INITIAL_CATEGORIES, INITIAL_BRANDS, INITIAL_BRANCHES, INITIAL_SUPPLIERS, INITIAL_EXPENSES, INITIAL_USERS, INITIAL_SETTINGS } from '../constants';
 import * as db from '../services/supabaseService';
 import { calculateCartTotals } from '../utils/cart';
-import { generateInvoiceNumber } from '../utils/generators';
+import { generateInvoiceNumber, generateTransferNumber } from '../utils/generators';
 
 interface StoreContextType {
   products: Product[];
@@ -11,6 +11,7 @@ interface StoreContextType {
   cart: CartItem[];
   salesHistory: SalesRecord[];
   stockHistory: StockMovement[];
+  stockTransfers: StockTransfer[];
   categories: string[];
   brands: string[];
   branches: Branch[];
@@ -45,6 +46,7 @@ interface StoreContextType {
 
   completeSale: (paymentMethod: SalesRecord['paymentMethod'], discount: number, customerId?: string) => SalesRecord;
   adjustStock: (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => void;
+  transferStock: (toBranchId: string, items: StockTransferItem[], notes: string) => StockTransfer;
 
   addCategory: (category: string) => void;
   removeCategory: (category: string) => void;
@@ -94,6 +96,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [cart, setCart] = useState<CartItem[]>([]);
   const [salesHistory, setSalesHistory] = useState<SalesRecord[]>([]);
   const [stockHistory, setStockHistory] = useState<StockMovement[]>([]);
+  const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>([]);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [brands, setBrands] = useState<string[]>(INITIAL_BRANDS);
   const [suppliers, setSuppliers] = useState<Supplier[]>(INITIAL_SUPPLIERS);
@@ -125,6 +128,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (data.categories) setCategories(data.categories);
           if (data.brands) setBrands(data.brands);
           if (data.stockHistory) setStockHistory(data.stockHistory);
+          if (data.stockTransfers) setStockTransfers(data.stockTransfers);
           if (data.suppliers) setSuppliers(data.suppliers);
           if (data.supplierTransactions) setSupplierTransactions(data.supplierTransactions);
           if (data.expenses) setExpenses(data.expenses);
@@ -174,6 +178,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           db.fetchDamagedGoods(),
         ]);
 
+        // Load stock transfers separately (table may not exist yet)
+        let stockTransfersData: StockTransfer[] = [];
+        try {
+          stockTransfersData = await db.fetchStockTransfers();
+        } catch (_) {
+          // Table may not exist yet — ignore
+        }
+
         setBranches(branchesData);
         setProducts(productsData);
         setCustomers(customersData);
@@ -187,6 +199,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setCategories(categoriesData);
         setBrands(brandsData);
         setDamagedGoods(damagedGoodsData);
+        setStockTransfers(stockTransfersData);
         if (branchesData.length > 0) setCurrentBranch(branchesData[0]);
       } catch (err: unknown) {
         console.error('Failed to load data from Supabase', err);
@@ -203,10 +216,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (useSupabase) return;
     const data = {
       branches, salesHistory, customers, products, categories, brands,
-      stockHistory, suppliers, supplierTransactions, expenses, users, settings, damagedGoods
+      stockHistory, stockTransfers, suppliers, supplierTransactions, expenses, users, settings, damagedGoods
     };
     localStorage.setItem('hoard_data_v2', JSON.stringify(data));
-  }, [useSupabase, branches, salesHistory, customers, products, categories, brands, stockHistory, suppliers, supplierTransactions, expenses, users, settings, damagedGoods]);
+  }, [useSupabase, branches, salesHistory, customers, products, categories, brands, stockHistory, stockTransfers, suppliers, supplierTransactions, expenses, users, settings, damagedGoods]);
 
   // ---- Helper for async DB calls with error handling ----
   const dbCall = useCallback(async (fn: () => Promise<void>) => {
@@ -467,6 +480,93 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // ============================================================
+  // STOCK TRANSFER (between branches)
+  // ============================================================
+  const transferStock = (toBranchId: string, items: StockTransferItem[], notes: string): StockTransfer => {
+    const toBranch = branches.find(b => b.id === toBranchId);
+    if (!toBranch) throw new Error('Destination branch not found');
+
+    const transferNumber = generateTransferNumber();
+    const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
+    const totalValue = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+
+    const transfer: StockTransfer = {
+      id: Math.random().toString(36).substr(2, 9),
+      transferNumber,
+      date: new Date().toISOString(),
+      fromBranchId: currentBranch.id,
+      fromBranchName: currentBranch.name,
+      toBranchId,
+      toBranchName: toBranch.name,
+      items,
+      totalItems,
+      totalValue,
+      status: 'COMPLETED',
+      notes,
+    };
+
+    // Update product stock: deduct from source, add to destination
+    const newStockLogs: StockMovement[] = [];
+    const newProducts = products.map(p => {
+      const transferItem = items.find(i => i.productId === p.id);
+      if (!transferItem) return p;
+
+      const fromStock = Math.max(0, (p.branchStock[currentBranch.id] || 0) - transferItem.quantity);
+      const toStock = (p.branchStock[toBranchId] || 0) + transferItem.quantity;
+      const updatedBranchStock = { ...p.branchStock, [currentBranch.id]: fromStock, [toBranchId]: toStock };
+      const newTotalStock = Object.values(updatedBranchStock).reduce((a: number, b: number) => a + b, 0);
+
+      // Log OUT from source branch
+      newStockLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        productId: p.id,
+        productName: p.name,
+        branchId: currentBranch.id,
+        branchName: currentBranch.name,
+        type: 'TRANSFER',
+        quantity: transferItem.quantity,
+        reason: `Transfer OUT → ${toBranch.name} (${transferNumber})`,
+        date: new Date().toISOString(),
+      });
+
+      // Log IN to destination branch
+      newStockLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        productId: p.id,
+        productName: p.name,
+        branchId: toBranchId,
+        branchName: toBranch.name,
+        type: 'TRANSFER',
+        quantity: transferItem.quantity,
+        reason: `Transfer IN ← ${currentBranch.name} (${transferNumber})`,
+        date: new Date().toISOString(),
+      });
+
+      return { ...p, branchStock: updatedBranchStock, stock: newTotalStock };
+    });
+
+    setProducts(newProducts);
+    setStockHistory(prev => [...newStockLogs, ...prev]);
+    setStockTransfers(prev => [transfer, ...prev]);
+
+    // Persist to Supabase
+    dbCall(async () => {
+      for (const item of items) {
+        const product = newProducts.find(p => p.id === item.productId);
+        if (!product) continue;
+        await db.upsertBranchStock(item.productId, currentBranch.id, product.branchStock[currentBranch.id] || 0);
+        await db.upsertBranchStock(item.productId, toBranchId, product.branchStock[toBranchId] || 0);
+      }
+      for (const log of newStockLogs) {
+        await db.insertStockMovement(log);
+      }
+      await db.insertStockTransfer(transfer);
+    });
+
+    return transfer;
+  };
+
+  // ============================================================
   // CATEGORY / BRAND ACTIONS
   // ============================================================
   const addCategory = (category: string) => {
@@ -564,7 +664,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const exportData = () => {
     const data = {
       branches, salesHistory, customers, products, categories, brands,
-      stockHistory, suppliers, supplierTransactions, expenses, users, settings
+      stockHistory, stockTransfers, suppliers, supplierTransactions, expenses, users, settings
     };
     return JSON.stringify(data, null, 2);
   };
@@ -613,13 +713,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <StoreContext.Provider value={{
-      products, customers, cart, salesHistory, stockHistory, categories, brands, branches, suppliers, supplierTransactions, expenses, damagedGoods, users, settings,
+      products, customers, cart, salesHistory, stockHistory, stockTransfers, categories, brands, branches, suppliers, supplierTransactions, expenses, damagedGoods, users, settings,
       currentBranch, currentUser, currentView, isLoading, dbError,
       setBranch, addBranch, updateBranch,
       addProduct, updateProduct, deleteProduct,
       addCustomer, updateCustomer, deleteCustomer,
       addToCart, removeFromCart, clearCart,
-      completeSale, adjustStock,
+      completeSale, adjustStock, transferStock,
       addCategory, removeCategory, addBrand, removeBrand,
       addSupplier, updateSupplier, deleteSupplier, addSupplierTransaction,
       addExpense, deleteExpense,

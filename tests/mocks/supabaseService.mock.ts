@@ -5,7 +5,7 @@
  * component and context tests never hit the real database.
  */
 import { vi } from 'vitest';
-import type { Branch, Product, Customer, SalesRecord, StockMovement, Supplier, SupplierTransaction, Expense, User, AppSettings } from '../types';
+import type { Branch, Product, Customer, SalesRecord, StockMovement, StockTransfer, Supplier, SupplierTransaction, Expense, User, AppSettings } from '../types';
 
 // ---- Branches ----
 export const fetchBranches = vi.fn<() => Promise<Branch[]>>().mockResolvedValue([]);
@@ -65,6 +65,10 @@ export const deleteCategory = vi.fn<(n: string) => Promise<void>>().mockResolved
 export const fetchBrands = vi.fn<() => Promise<string[]>>().mockResolvedValue([]);
 export const insertBrand = vi.fn<(n: string) => Promise<void>>().mockResolvedValue(undefined);
 export const deleteBrand = vi.fn<(n: string) => Promise<void>>().mockResolvedValue(undefined);
+
+// ---- Stock Transfers ----
+export const insertStockTransfer = vi.fn<(t: StockTransfer) => Promise<void>>().mockResolvedValue(undefined);
+export const fetchStockTransfers = vi.fn<() => Promise<StockTransfer[]>>().mockResolvedValue([]);
 
 // ---- Misc ----
 export const initializeBranchStock = vi.fn<(bid: string, pids: string[]) => Promise<void>>().mockResolvedValue(undefined);

@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit2, AlertCircle, Trash2, Search, Filter, History, Box, Tag, ArrowUpRight, ArrowDownRight, Save, X, Building2, AlertTriangle, Palette, Ruler } from 'lucide-react';
+import { Plus, Edit2, AlertCircle, Trash2, Search, Filter, History, Box, Tag, ArrowUpRight, ArrowDownRight, Save, X, Building2, AlertTriangle, Palette, Ruler, ArrowRightLeft, FileText, Printer, ChevronDown, ChevronUp, Minus } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { Product } from '../types';
+import { Product, StockTransferItem, StockTransfer } from '../types';
 
-type InventoryTab = 'ALL' | 'LOW_STOCK' | 'ADJUSTMENTS' | 'CATEGORIES';
+type InventoryTab = 'ALL' | 'LOW_STOCK' | 'ADJUSTMENTS' | 'CATEGORIES' | 'TRANSFERS';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -54,10 +54,10 @@ interface VariationRow {
 
 const Inventory: React.FC = () => {
   const {
-    products, categories, brands, stockHistory, currentBranch,
-    addProduct, updateProduct, deleteProduct, adjustStock,
+    products, categories, brands, stockHistory, currentBranch, branches,
+    addProduct, updateProduct, deleteProduct, adjustStock, transferStock,
     addCategory, removeCategory, addBrand, removeBrand,
-    currentUser
+    currentUser, stockTransfers
   } = useStore();
   const isCashier = currentUser?.role === 'CASHIER';
 
@@ -82,6 +82,14 @@ const Inventory: React.FC = () => {
 
   // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+
+  // Stock Transfer State
+  const [transferItems, setTransferItems] = useState<StockTransferItem[]>([]);
+  const [transferDestBranch, setTransferDestBranch] = useState<string>('');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [transferSearchTerm, setTransferSearchTerm] = useState('');
+  const [completedTransfer, setCompletedTransfer] = useState<StockTransfer | null>(null);
+  const [showTransferHistory, setShowTransferHistory] = useState(true);
 
   // Filtering
   const filteredProducts = useMemo(() => {
@@ -223,6 +231,169 @@ const Inventory: React.FC = () => {
     }
   };
 
+  // --- Stock Transfer Handlers ---
+  const otherBranches = branches.filter(b => b.id !== currentBranch.id);
+
+  const handleAddToTransfer = (product: Product) => {
+    const existing = transferItems.find(i => i.productId === product.id);
+    if (existing) return;
+    setTransferItems(prev => [...prev, {
+      productId: product.id,
+      productName: product.name,
+      sku: product.sku,
+      quantity: 1,
+      unitPrice: product.price,
+      costPrice: product.costPrice,
+    }]);
+  };
+
+  const handleUpdateTransferQty = (productId: string, qty: number) => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    const maxQty = product.branchStock[currentBranch.id] || 0;
+    const clampedQty = Math.max(1, Math.min(qty, maxQty));
+    setTransferItems(prev => prev.map(i => i.productId === productId ? { ...i, quantity: clampedQty } : i));
+  };
+
+  const handleRemoveTransferItem = (productId: string) => {
+    setTransferItems(prev => prev.filter(i => i.productId !== productId));
+  };
+
+  const handleExecuteTransfer = () => {
+    if (!transferDestBranch || transferItems.length === 0) return;
+    const result = transferStock(transferDestBranch, transferItems, transferNotes);
+    setCompletedTransfer(result);
+    setTransferItems([]);
+    setTransferNotes('');
+  };
+
+  const generateTransferPDF = (transfer: StockTransfer) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Stock Transfer ${transfer.transferNumber}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; border-bottom: 3px solid #0f172a; padding-bottom: 20px; }
+    .header h1 { font-size: 24px; color: #0f172a; }
+    .header .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .transfer-number { font-size: 18px; font-weight: 700; color: #0f172a; text-align: right; }
+    .transfer-date { font-size: 12px; color: #64748b; text-align: right; margin-top: 4px; }
+    .branches { display: flex; gap: 40px; margin-bottom: 32px; }
+    .branch-box { flex: 1; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px; }
+    .branch-box h3 { font-size: 10px; text-transform: uppercase; font-weight: 700; color: #64748b; margin-bottom: 8px; letter-spacing: 1px; }
+    .branch-box p { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .arrow { display: flex; align-items: center; justify-content: center; font-size: 24px; color: #64748b; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    thead th { background: #f8fafc; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; border-bottom: 2px solid #e2e8f0; }
+    tbody td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .totals { display: flex; justify-content: flex-end; margin-bottom: 24px; }
+    .totals-box { width: 250px; }
+    .totals-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
+    .totals-row.total { font-weight: 700; font-size: 15px; border-top: 2px solid #0f172a; padding-top: 8px; margin-top: 4px; }
+    .notes { padding: 16px; background: #f8fafc; border-radius: 8px; margin-bottom: 32px; }
+    .notes h4 { font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b; margin-bottom: 6px; }
+    .notes p { font-size: 13px; color: #475569; }
+    .footer { text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; }
+    .status { display: inline-block; background: #dcfce7; color: #166534; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 100px; }
+    @media print { body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Stock Transfer Invoice</h1>
+      <div class="subtitle">Hoard Lavish ERP — Inter-branch Stock Transfer</div>
+    </div>
+    <div>
+      <div class="transfer-number">${transfer.transferNumber}</div>
+      <div class="transfer-date">${new Date(transfer.date).toLocaleString()}</div>
+      <div style="text-align:right;margin-top:6px"><span class="status">${transfer.status}</span></div>
+    </div>
+  </div>
+
+  <div class="branches">
+    <div class="branch-box">
+      <h3>From (Source)</h3>
+      <p>${transfer.fromBranchName}</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="branch-box">
+      <h3>To (Destination)</h3>
+      <p>${transfer.toBranchName}</p>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Product</th>
+        <th>SKU</th>
+        <th class="text-center">Quantity</th>
+        <th class="text-right">Unit Price</th>
+        <th class="text-right">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${transfer.items.map((item, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td>${item.productName}</td>
+        <td style="font-family:monospace;font-size:12px">${item.sku}</td>
+        <td class="text-center">${item.quantity}</td>
+        <td class="text-right">LKR ${item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+        <td class="text-right">LKR ${(item.quantity * item.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+      </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="totals-box">
+      <div class="totals-row"><span>Total Items:</span><span>${transfer.totalItems}</span></div>
+      <div class="totals-row total"><span>Total Value:</span><span>LKR ${transfer.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+    </div>
+  </div>
+
+  ${transfer.notes ? `
+  <div class="notes">
+    <h4>Notes</h4>
+    <p>${transfer.notes}</p>
+  </div>
+  ` : ''}
+
+  <div class="footer">
+    Generated by Hoard Lavish ERP — ${new Date().toLocaleString()}
+  </div>
+
+  <script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  // Available products for transfer (filtered by search)
+  const transferableProducts = useMemo(() => {
+    let result = products.filter(p => (p.branchStock[currentBranch.id] || 0) > 0);
+    if (transferSearchTerm) {
+      const lower = transferSearchTerm.toLowerCase();
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(lower) ||
+        p.sku.toLowerCase().includes(lower)
+      );
+    }
+    return result;
+  }, [products, currentBranch, transferSearchTerm]);
+
   // Tab button component
   const TabButton = ({ id, label, icon: Icon }: { id: InventoryTab, label: string, icon: any }) => (
     <button
@@ -270,6 +441,7 @@ const Inventory: React.FC = () => {
           <TabButton id="ALL" label="All Products" icon={Box} />
           <TabButton id="LOW_STOCK" label="Low Stock Alerts" icon={AlertCircle} />
           <TabButton id="ADJUSTMENTS" label="Stock History" icon={History} />
+          {!isCashier && <TabButton id="TRANSFERS" label="Stock Transfers" icon={ArrowRightLeft} />}
           {!isCashier && <TabButton id="CATEGORIES" label="Categories & Brands" icon={Tag} />}
         </div>
       </div>
@@ -407,7 +579,7 @@ const Inventory: React.FC = () => {
           </div>
         )}
 
-        {/* STOCK HISTORY TAB */}
+        {/* STOCK HISTORY TAB — also show TRANSFER type */}
         {activeTab === 'ADJUSTMENTS' && (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <table className="w-full text-left text-sm">
@@ -432,9 +604,12 @@ const Inventory: React.FC = () => {
                     <td className="p-4">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold
                         ${log.type === 'IN' ? 'bg-green-100 text-green-700' :
-                          log.type === 'OUT' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                          log.type === 'OUT' ? 'bg-red-100 text-red-700' :
+                          log.type === 'TRANSFER' ? 'bg-purple-100 text-purple-700' :
+                          'bg-blue-100 text-blue-700'}`}>
                         {log.type === 'IN' && <ArrowDownRight size={12} />}
                         {log.type === 'OUT' && <ArrowUpRight size={12} />}
+                        {log.type === 'TRANSFER' && <ArrowRightLeft size={12} />}
                         {log.type}
                       </span>
                     </td>
@@ -447,6 +622,289 @@ const Inventory: React.FC = () => {
             {stockHistory.filter(h => h.branchId === currentBranch.id).length === 0 && (
               <div className="p-8 text-center text-slate-400">No stock movement history available for this branch.</div>
             )}
+          </div>
+        )}
+
+        {/* STOCK TRANSFERS TAB */}
+        {activeTab === 'TRANSFERS' && (
+          <div className="space-y-6">
+            {/* Completed Transfer PDF Preview */}
+            {completedTransfer && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-100 rounded-full text-emerald-600">
+                      <ArrowRightLeft size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-emerald-800">Transfer Completed!</h4>
+                      <p className="text-sm text-emerald-600">Transfer {completedTransfer.transferNumber} — {completedTransfer.totalItems} items moved to {completedTransfer.toBranchName}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => generateTransferPDF(completedTransfer)}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
+                    >
+                      <Printer size={14} /> Print / Download PDF
+                    </button>
+                    <button
+                      onClick={() => setCompletedTransfer(null)}
+                      className="p-2 text-emerald-400 hover:text-emerald-600 rounded"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* New Transfer Section */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <ArrowRightLeft size={18} className="text-indigo-500" />
+                    Create Stock Transfer
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">Select products and quantities to transfer to another branch.</p>
+                </div>
+                {otherBranches.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Transfer To:</label>
+                    <select
+                      className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      value={transferDestBranch}
+                      onChange={e => setTransferDestBranch(e.target.value)}
+                    >
+                      <option value="">Select Destination...</option>
+                      {otherBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {otherBranches.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">No other branches available for transfer. Add more branches first.</div>
+              ) : (
+                <div className="p-5 space-y-4">
+                  {/* Product Selector */}
+                  <div>
+                    <div className="relative max-w-md mb-3">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type="text"
+                        placeholder="Search products to add to transfer..."
+                        className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        value={transferSearchTerm}
+                        onChange={e => setTransferSearchTerm(e.target.value)}
+                      />
+                    </div>
+
+                    {transferSearchTerm && (
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 max-h-48 overflow-y-auto mb-4">
+                        {transferableProducts.filter(p => !transferItems.some(i => i.productId === p.id)).map(p => (
+                          <div
+                            key={p.id}
+                            className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-100 cursor-pointer border-b border-slate-100 last:border-0"
+                            onClick={() => { handleAddToTransfer(p); setTransferSearchTerm(''); }}
+                          >
+                            <div>
+                              <span className="font-medium text-sm text-slate-900">{p.name}</span>
+                              <span className="ml-2 text-xs text-slate-400 font-mono">{p.sku}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-slate-500">Available: {p.branchStock[currentBranch.id] || 0}</span>
+                              <Plus size={14} className="text-indigo-500" />
+                            </div>
+                          </div>
+                        ))}
+                        {transferableProducts.filter(p => !transferItems.some(i => i.productId === p.id)).length === 0 && (
+                          <div className="p-4 text-center text-slate-400 text-sm">No matching products with available stock.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Transfer Items Table */}
+                  {transferItems.length > 0 ? (
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                          <tr>
+                            <th className="p-3">Product</th>
+                            <th className="p-3">SKU</th>
+                            <th className="p-3 text-center">Available</th>
+                            <th className="p-3 text-center">Transfer Qty</th>
+                            <th className="p-3 text-right">Unit Price</th>
+                            <th className="p-3 text-right">Line Total</th>
+                            <th className="p-3 text-center">Remove</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {transferItems.map(item => {
+                            const product = products.find(p => p.id === item.productId);
+                            const available = product ? (product.branchStock[currentBranch.id] || 0) : 0;
+                            return (
+                              <tr key={item.productId} className="hover:bg-slate-50">
+                                <td className="p-3 font-medium text-slate-900">{item.productName}</td>
+                                <td className="p-3 text-slate-500 font-mono text-xs">{item.sku}</td>
+                                <td className="p-3 text-center">
+                                  <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-medium">{available}</span>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => handleUpdateTransferQty(item.productId, item.quantity - 1)}
+                                      className="p-1 hover:bg-slate-200 rounded text-slate-500"
+                                      disabled={item.quantity <= 1}
+                                    >
+                                      <Minus size={14} />
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={available}
+                                      value={item.quantity}
+                                      onChange={e => handleUpdateTransferQty(item.productId, Number(e.target.value))}
+                                      className="w-16 text-center border border-slate-200 rounded py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                                    />
+                                    <button
+                                      onClick={() => handleUpdateTransferQty(item.productId, item.quantity + 1)}
+                                      className="p-1 hover:bg-slate-200 rounded text-slate-500"
+                                      disabled={item.quantity >= available}
+                                    >
+                                      <Plus size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-right text-slate-600">{fmtCurrency(item.unitPrice)}</td>
+                                <td className="p-3 text-right font-medium text-slate-900">{fmtCurrency(item.quantity * item.unitPrice)}</td>
+                                <td className="p-3 text-center">
+                                  <button
+                                    onClick={() => handleRemoveTransferItem(item.productId)}
+                                    className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      {/* Transfer Summary */}
+                      <div className="bg-slate-50 p-4 border-t border-slate-200">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 max-w-md">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Transfer Notes</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Seasonal restock for Downtown branch"
+                              className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                              value={transferNotes}
+                              onChange={e => setTransferNotes(e.target.value)}
+                            />
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs text-slate-500 mb-1">
+                              <span className="font-bold">{transferItems.reduce((s, i) => s + i.quantity, 0)}</span> items
+                            </div>
+                            <div className="text-lg font-bold text-slate-900">
+                              {fmtCurrency(transferItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0))}
+                            </div>
+                            <button
+                              onClick={handleExecuteTransfer}
+                              disabled={!transferDestBranch}
+                              className={`mt-3 px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 ml-auto transition-colors ${
+                                transferDestBranch
+                                  ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              <ArrowRightLeft size={16} /> Execute Transfer
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
+                      <ArrowRightLeft size={32} className="mx-auto mb-2 text-slate-300" />
+                      <p className="text-sm">Search and add products above to start a transfer.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Transfer History */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div
+                className="p-5 border-b border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-50"
+                onClick={() => setShowTransferHistory(!showTransferHistory)}
+              >
+                <div>
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <History size={18} className="text-slate-500" />
+                    Transfer History
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">{stockTransfers.length} transfers recorded</p>
+                </div>
+                {showTransferHistory ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+              </div>
+
+              {showTransferHistory && (
+                <>
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                      <tr>
+                        <th className="p-4">Date</th>
+                        <th className="p-4">Transfer #</th>
+                        <th className="p-4">From</th>
+                        <th className="p-4">To</th>
+                        <th className="p-4 text-center">Items</th>
+                        <th className="p-4 text-right">Value</th>
+                        <th className="p-4 text-center">Status</th>
+                        <th className="p-4 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {stockTransfers
+                        .filter(t => t.fromBranchId === currentBranch.id || t.toBranchId === currentBranch.id)
+                        .map(t => (
+                        <tr key={t.id} className="hover:bg-slate-50">
+                          <td className="p-4 text-slate-500 whitespace-nowrap">{new Date(t.date).toLocaleString()}</td>
+                          <td className="p-4 font-mono text-xs font-bold text-indigo-600">{t.transferNumber}</td>
+                          <td className="p-4 text-slate-700">{t.fromBranchName}</td>
+                          <td className="p-4 text-slate-700">{t.toBranchName}</td>
+                          <td className="p-4 text-center">
+                            <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-medium">{t.totalItems}</span>
+                          </td>
+                          <td className="p-4 text-right font-medium text-slate-900">{fmtCurrency(t.totalValue)}</td>
+                          <td className="p-4 text-center">
+                            <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-xs font-bold">{t.status}</span>
+                          </td>
+                          <td className="p-4 text-center">
+                            <button
+                              onClick={() => generateTransferPDF(t)}
+                              className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors"
+                              title="Print Transfer Invoice"
+                            >
+                              <FileText size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {stockTransfers.filter(t => t.fromBranchId === currentBranch.id || t.toBranchId === currentBranch.id).length === 0 && (
+                    <div className="p-8 text-center text-slate-400">No stock transfers recorded for this branch yet.</div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
 

@@ -36,7 +36,7 @@ const ConfirmDialog: React.FC<{
 );
 
 const Accounting: React.FC = () => {
-  const { salesHistory, expenses, supplierTransactions, currentBranch, branches, addExpense, deleteExpense } = useStore();
+  const { salesHistory, expenses, supplierTransactions, stockTransfers, currentBranch, branches, addExpense, deleteExpense } = useStore();
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'EXPENSES'>('DASHBOARD');
   const [filterPeriod, setFilterPeriod] = useState<'ALL' | 'MONTH'>('ALL');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
@@ -142,6 +142,7 @@ const Accounting: React.FC = () => {
 
   // --- Combined Ledger ---
   const ledger = useMemo(() => {
+    const filteredTransfers = (stockTransfers || []).filter(t => isInPeriod(t.date));
     const all = [
       ...filteredSales.map(s => ({ 
         id: s.id, date: s.date, desc: `Sale #${s.invoiceNumber}`, amount: s.totalAmount, type: 'IN', category: 'Sales' 
@@ -151,10 +152,13 @@ const Accounting: React.FC = () => {
       })),
       ...filteredSupplierTx.map(t => ({ 
         id: t.id, date: t.date, desc: `Supplier Payment: ${t.supplierName}`, amount: t.amount, type: 'OUT', category: 'Inventory' 
+      })),
+      ...filteredTransfers.map(t => ({
+        id: t.id, date: t.date, desc: `Stock Transfer ${t.transferNumber}: ${t.fromBranchName} → ${t.toBranchName} (${t.totalItems} items)`, amount: t.totalValue, type: 'TRANSFER' as const, category: 'Stock Transfer'
       }))
     ];
     return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [filteredSales, filteredExpenses, filteredSupplierTx]);
+  }, [filteredSales, filteredExpenses, filteredSupplierTx, stockTransfers]);
 
 
   return (
@@ -342,11 +346,11 @@ const Accounting: React.FC = () => {
                        <td className="p-4 text-slate-500 whitespace-nowrap">{new Date(item.date).toLocaleDateString()}</td>
                        <td className="p-4 font-medium text-slate-900">{item.desc}</td>
                        <td className="p-4 text-slate-600">{item.category}</td>
-                       <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                         {item.type === 'OUT' ? '-' : ''}${item.amount.toFixed(2)}
+                       <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : item.type === 'TRANSFER' ? 'text-indigo-600' : 'text-rose-600'}`}>
+                         {item.type === 'OUT' ? '-' : ''}{item.type === 'TRANSFER' ? '↔' : ''}${item.amount.toFixed(2)}
                        </td>
                        <td className="p-4 text-center">
-                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${item.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${item.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : item.type === 'TRANSFER' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'}`}>
                            {item.type}
                          </span>
                        </td>
