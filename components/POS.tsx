@@ -35,7 +35,7 @@ const AlertPopup: React.FC<{ message: string; type?: 'error' | 'warning'; onClos
 );
 
 const POS: React.FC = () => {
-  const { products, customers, cart, salesHistory, addToCart, removeFromCart, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch } = useStore();
+  const { products, customers, cart, salesHistory, addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -45,6 +45,7 @@ const POS: React.FC = () => {
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay'>('Cash');
 
   // Customer search in checkout
   const [customerSearch, setCustomerSearch] = useState('');
@@ -95,7 +96,9 @@ const POS: React.FC = () => {
     if (!barcodeInput.trim()) return [];
     return products.filter(p =>
       p.sku.toLowerCase().includes(barcodeInput.toLowerCase()) ||
-      p.name.toLowerCase().includes(barcodeInput.toLowerCase())
+      p.name.toLowerCase().includes(barcodeInput.toLowerCase()) ||
+      (p.barcode && p.barcode.toLowerCase().includes(barcodeInput.toLowerCase())) ||
+      (p.barcode2 && p.barcode2.toLowerCase().includes(barcodeInput.toLowerCase()))
     ).slice(0, 5);
   }, [products, barcodeInput]);
 
@@ -112,7 +115,9 @@ const POS: React.FC = () => {
 
   // Billing Calculations — 4. Remove tax
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const total = Math.max(0, subtotal - discountAmount);
+  const itemDiscountsTotal = cart.reduce((sum, item) => sum + ((item.discount || 0) * item.quantity), 0);
+  const totalDiscount = itemDiscountsTotal + discountAmount;
+  const total = Math.max(0, subtotal - totalDiscount);
 
   // 7. Calculate profit for discount validation
   const totalCost = cart.reduce((sum, item) => sum + (item.costPrice * item.quantity), 0);
@@ -129,8 +134,12 @@ const POS: React.FC = () => {
   // 1b. Handle barcode submit — exact match first, then top suggestion
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Try exact SKU match first (for real barcode scanners)
-    const exact = products.find(p => p.sku.toLowerCase() === barcodeInput.toLowerCase());
+    // Try exact SKU or barcode match first (for real barcode scanners)
+    const exact = products.find(p => 
+      p.sku.toLowerCase() === barcodeInput.toLowerCase() ||
+      (p.barcode && p.barcode.toLowerCase() === barcodeInput.toLowerCase()) ||
+      (p.barcode2 && p.barcode2.toLowerCase() === barcodeInput.toLowerCase())
+    );
     const product = exact || skuSuggestions[0];
     if (product) {
       const branchStock = product.branchStock[currentBranch.id] || 0;
@@ -173,20 +182,40 @@ const POS: React.FC = () => {
 
   // 7. Discount validation
   const handleDiscountChange = (val: number) => {
-    if (val > maxProfit && maxProfit > 0) {
+    const totalDiscountWithNew = itemDiscountsTotal + val;
+    if (totalDiscountWithNew > maxProfit && maxProfit > 0) {
       setAlertPopup({
-        message: `Discount (${fmtCurrency(val)}) cannot exceed the profit margin (${fmtCurrency(maxProfit)}). Maximum allowed discount: ${fmtCurrency(maxProfit)}.`,
+        message: `Total discount (${fmtCurrency(totalDiscountWithNew)}) cannot exceed the profit margin (${fmtCurrency(maxProfit)}). Maximum allowed: ${fmtCurrency(maxProfit - itemDiscountsTotal)}.`,
         type: 'warning'
       });
-      setDiscountAmount(maxProfit);
+      setDiscountAmount(Math.max(0, maxProfit - itemDiscountsTotal));
     } else {
       setDiscountAmount(val);
     }
   };
 
-  const handleCheckout = (method: 'Cash' | 'Card') => {
+  const handleItemDiscountChange = (productId: string, discount: number) => {
+    const item = cart.find(i => i.id === productId);
+    if (!item) return;
+
+    const itemProfit = (item.price - item.costPrice) * item.quantity;
+    const otherItemsDiscounts = cart.reduce((sum, i) => i.id !== productId ? sum + ((i.discount || 0) * i.quantity) : sum, 0);
+    const maxItemDiscount = itemProfit;
+
+    if (discount * item.quantity > maxItemDiscount) {
+      setAlertPopup({
+        message: `Discount for ${item.name} cannot exceed its profit margin. Max: ${fmtCurrency(maxItemDiscount / item.quantity)} per unit.`,
+        type: 'warning'
+      });
+      updateCartItemDiscount(productId, Math.max(0, maxItemDiscount / item.quantity));
+    } else {
+      updateCartItemDiscount(productId, discount);
+    }
+  };
+
+  const handleCheckout = () => {
     if (cart.length === 0) return;
-    const sale = completeSale(method, discountAmount, selectedCustomer?.id);
+    const sale = completeSale(selectedPaymentMethod, totalDiscount, selectedCustomer?.id);
     setLastSale(sale);
     setIsInvoiceOpen(true);
     setSelectedCustomer(null);
@@ -218,7 +247,14 @@ const POS: React.FC = () => {
   };
 
   const handlePrint = () => {
-    window.print();
+    // Use silent printing in Electron, fallback to window.print in browser
+    if (window.electronAPI?.silentPrint) {
+      window.electronAPI.silentPrint();
+    } else {
+      window.print();
+    }
+    // Close invoice after printing
+    setTimeout(() => setIsInvoiceOpen(false), 500);
   };
 
   // === Exchange Helpers ===
@@ -276,7 +312,7 @@ const POS: React.FC = () => {
   const newItemsTotal = exchangeNewItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const exchangeDifference = newItemsTotal - returnedTotal;
 
-  const handleCompleteExchange = (method: 'Cash' | 'Card') => {
+  const handleCompleteExchange = () => {
     const allReturned = [...returnedItems, ...noSaleReturnItems];
     if (allReturned.length === 0 && exchangeNewItems.length === 0) return;
 
@@ -288,7 +324,7 @@ const POS: React.FC = () => {
       returnedTotal,
       newTotal: newItemsTotal,
       difference: exchangeDifference,
-      paymentMethod: method,
+      paymentMethod: selectedPaymentMethod,
       customerId: selectedExchangeSale?.customerId,
       customerName: selectedExchangeSale?.customerName,
       description: exchangeDescription || 'Product Exchange',
@@ -329,12 +365,12 @@ ${exchange.customerName ? `<div style="font-size:12px;color:#475569;margin-top:4
 </div>
 ${exchange.returnedItems.length > 0 ? `<div class="section"><div class="section-title">Returned Items</div>
 <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>
-${exchange.returnedItems.map(i => `<tr><td>${i.name}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
+${exchange.returnedItems.map(i => `<tr><td>${i.name}${i.size || i.color ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${[i.size ? `Size: ${i.size}` : '', i.color ? `Color: ${i.color}` : ''].filter(Boolean).join(' • ')}</div>` : ''}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
 </tbody></table>
 <div class="row" style="justify-content:flex-end;font-weight:600;color:#dc2626">Return Credit: -${fmtC(exchange.returnedTotal)}</div></div>` : ''}
 ${exchange.newItems.length > 0 ? `<div class="section"><div class="section-title">New Items</div>
 <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>
-${exchange.newItems.map(i => `<tr><td>${i.name}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
+${exchange.newItems.map(i => `<tr><td>${i.name}${i.size || i.color ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${[i.size ? `Size: ${i.size}` : '', i.color ? `Color: ${i.color}` : ''].filter(Boolean).join(' • ')}</div>` : ''}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
 </tbody></table>
 <div class="row" style="justify-content:flex-end;font-weight:600;color:#166534">New Total: ${fmtC(exchange.newTotal)}</div></div>` : ''}
 <div class="totals">
@@ -588,33 +624,46 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                 </div>
                 <div className="flex-1">
                   <div className="flex justify-between items-start">
-                    <h4 className="font-medium text-slate-900 text-sm line-clamp-1">{item.name}</h4>
-                    <p className="text-slate-900 font-bold text-sm">{fmtCurrency(item.price * item.quantity)}</p>
+                    <div className="flex-1">
+                      <h4 className="font-medium text-slate-900 text-sm line-clamp-1">{item.name}</h4>
+                      {(item.size || item.color) && (
+                        <div className="flex gap-2 mt-1">
+                          {item.size && (
+                            <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">Size: {item.size}</span>
+                          )}
+                          {item.color && (
+                            <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">Color: {item.color}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-slate-900 font-bold text-sm ml-2">{fmtCurrency(item.price * item.quantity - (item.discount || 0) * item.quantity)}</p>
                   </div>
+                  
+                  {/* Product Discount */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <label className="text-xs text-slate-500 font-medium">Discount/unit:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.discount || 0}
+                      onChange={(e) => handleItemDiscountChange(item.id, Number(e.target.value))}
+                      className="w-20 px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:ring-1 focus:ring-slate-400"
+                      placeholder="0.00"
+                    />
+                    {(item.discount || 0) > 0 && (
+                      <span className="text-xs text-emerald-600 font-medium">
+                        -{fmtCurrency((item.discount || 0) * item.quantity)} total
+                      </span>
+                    )}
+                  </div>
+                  
                   <div className="flex items-center justify-between mt-2">
                     {/* 5. Clear controls: - to reduce, + to add, trash to remove entirely */}
                     <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
                       <button
-                        onClick={() => {
-                          if (item.quantity > 1) {
-                            // Decrease quantity by 1
-                            const newCart = cart.map(c =>
-                              c.id === item.id ? { ...c, quantity: c.quantity - 1 } : c
-                            );
-                            // We can't directly set cart from here, so use removeFromCart and rely on context
-                            // Actually, since the context adds +1 each time, we need a workaround.
-                            // The minus just removes the item and the user can re-add with less.
-                            // Better: let's call removeFromCart which removes entirely, 
-                            // but for decrement we handle it in place:
-                            removeFromCart(item.id);
-                            // Re-add with quantity - 1
-                            for (let i = 0; i < item.quantity - 1; i++) {
-                              addToCart(item);
-                            }
-                          } else {
-                            removeFromCart(item.id);
-                          }
-                        }}
+                        onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
                         className="p-1.5 hover:bg-white rounded-md transition-colors"
                         title="Remove one"
                       >
@@ -650,9 +699,18 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
               <span>Subtotal</span>
               <span>{fmtCurrency(subtotal)}</span>
             </div>
-            {/* 7. Discount with profit validation */}
+            
+            {/* Item discounts */}
+            {itemDiscountsTotal > 0 && (
+              <div className="flex justify-between text-emerald-600 text-sm">
+                <span>Product Discounts</span>
+                <span>-{fmtCurrency(itemDiscountsTotal)}</span>
+              </div>
+            )}
+            
+            {/* 7. Additional Discount with profit validation */}
             <div className="flex justify-between items-center text-slate-500 text-sm">
-              <span>Discount</span>
+              <span>Additional Discount</span>
               <div className="flex items-center gap-1">
                 <span className="text-slate-400">- {CUR}</span>
                 <input
@@ -664,6 +722,14 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                 />
               </div>
             </div>
+            
+            {/* Total discounts */}
+            {totalDiscount > 0 && (
+              <div className="flex justify-between text-slate-700 text-sm font-medium">
+                <span>Total Discount</span>
+                <span>-{fmtCurrency(totalDiscount)}</span>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between mb-6 items-end pt-2 border-t border-dashed border-slate-200">
@@ -671,22 +737,29 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
             <span className="text-3xl font-bold text-slate-900">{fmtCurrency(total)}</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => handleCheckout('Cash')}
-              disabled={cart.length === 0}
-              className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 disabled:opacity-50 transition-colors"
+          {/* Payment Method Dropdown */}
+          <div className="mb-3">
+            <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Payment Method</label>
+            <select
+              value={selectedPaymentMethod}
+              onChange={e => setSelectedPaymentMethod(e.target.value as any)}
+              className="w-full p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white text-slate-700 font-medium"
             >
-              <Banknote size={18} /> Cash
-            </button>
-            <button
-              onClick={() => handleCheckout('Card')}
-              disabled={cart.length === 0}
-              className="flex items-center justify-center gap-2 py-3 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 shadow-lg disabled:opacity-50 transition-colors"
-            >
-              <CreditCard size={18} /> Pay Now
-            </button>
+              <option value="Cash">💵 Cash</option>
+              <option value="Card">💳 Card</option>
+              <option value="PayHere">📱 PayHere</option>
+              <option value="Online Transfer">🌐 Online Transfer</option>
+              <option value="MintPay">💰 MintPay</option>
+            </select>
           </div>
+
+          <button
+            onClick={handleCheckout}
+            disabled={cart.length === 0}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 shadow-lg disabled:opacity-50 transition-colors"
+          >
+            <CreditCard size={18} /> Complete Sale
+          </button>
         </div>
       </div>
 
@@ -756,11 +829,20 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
               <div className="space-y-3 mb-6">
                 {lastSale.items.map((item, idx) => (
                   <div key={idx} className="flex justify-between text-sm">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-1">
                       <span className="font-bold text-slate-700">{item.quantity}x</span>
-                      <span className="text-slate-600">{item.name}</span>
+                      <div className="flex-1">
+                        <span className="text-slate-600">{item.name}</span>
+                        {(item.size || item.color) && (
+                          <div className="flex gap-1 mt-0.5">
+                            {item.size && <span className="text-xs text-slate-400">Size: {item.size}</span>}
+                            {item.size && item.color && <span className="text-xs text-slate-400">•</span>}
+                            {item.color && <span className="text-xs text-slate-400">Color: {item.color}</span>}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <span className="font-medium text-slate-900">{fmtCurrency(item.price * item.quantity)}</span>
+                    <span className="font-medium text-slate-900 ml-2">{fmtCurrency(item.price * item.quantity)}</span>
                   </div>
                 ))}
               </div>
@@ -792,18 +874,12 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-100 flex gap-3 bg-white">
+            <div className="p-4 border-t border-slate-100 bg-white">
               <button
                 onClick={handlePrint}
-                className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl hover:bg-slate-800 transition-colors font-medium"
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl hover:bg-slate-800 transition-colors font-medium"
               >
                 <Printer size={18} /> Print Receipt
-              </button>
-              <button
-                onClick={() => setIsInvoiceOpen(false)}
-                className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-medium transition-colors"
-              >
-                Done
               </button>
             </div>
           </div>
@@ -889,6 +965,11 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                               />
                               <div>
                                 <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                                {(item.size || item.color) && (
+                                  <p className="text-xs text-slate-400 mt-0.5">
+                                    {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
+                                  </p>
+                                )}
                                 <p className="text-xs text-slate-400">{fmtCurrency(item.price)} each</p>
                               </div>
                             </div>
@@ -947,6 +1028,11 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                         <div key={item.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100">
                           <div>
                             <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                            {(item.size || item.color) && (
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
+                              </p>
+                            )}
                             <p className="text-xs text-slate-400">{fmtCurrency(item.price)}</p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1005,6 +1091,11 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                       <div key={item.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100">
                         <div>
                           <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                          {(item.size || item.color) && (
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
+                            </p>
+                          )}
                           <p className="text-xs text-slate-400">{fmtCurrency(item.price)} each</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1057,18 +1148,25 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
             </div>
 
             {/* Footer with action buttons */}
-            <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-              <button onClick={() => { setIsExchangeMode(false); resetExchangeState(); }} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm">Cancel</button>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleCompleteExchange('Cash')}
-                  disabled={(returnedItems.length === 0 && noSaleReturnItems.length === 0) && exchangeNewItems.length === 0}
-                  className="flex items-center gap-2 px-5 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 disabled:opacity-40 transition-colors"
+            <div className="p-5 border-t border-slate-100 bg-slate-50">
+              <div className="mb-3">
+                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Payment Method</label>
+                <select
+                  value={selectedPaymentMethod}
+                  onChange={e => setSelectedPaymentMethod(e.target.value as any)}
+                  className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white text-slate-700 text-sm font-medium"
                 >
-                  <Banknote size={16} /> Cash
-                </button>
+                  <option value="Cash">💵 Cash</option>
+                  <option value="Card">💳 Card</option>
+                  <option value="PayHere">📱 PayHere</option>
+                  <option value="Online Transfer">🌐 Online Transfer</option>
+                  <option value="MintPay">💰 MintPay</option>
+                </select>
+              </div>
+              <div className="flex justify-between items-center">
+                <button onClick={() => { setIsExchangeMode(false); resetExchangeState(); }} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm">Cancel</button>
                 <button
-                  onClick={() => handleCompleteExchange('Card')}
+                  onClick={handleCompleteExchange}
                   disabled={(returnedItems.length === 0 && noSaleReturnItems.length === 0) && exchangeNewItems.length === 0}
                   className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-40 transition-colors"
                 >
@@ -1110,9 +1208,18 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                 <div className="mb-4">
                   <p className="text-xs font-bold text-red-500 uppercase mb-2">Returned Items</p>
                   {lastExchange.returnedItems.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm py-1">
-                      <span className="text-slate-600">{item.quantity}x {item.name}</span>
-                      <span className="text-red-500">-{fmtCurrency(item.price * item.quantity)}</span>
+                    <div key={idx} className="text-sm py-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">{item.quantity}x {item.name}</span>
+                        <span className="text-red-500">-{fmtCurrency(item.price * item.quantity)}</span>
+                      </div>
+                      {(item.size || item.color) && (
+                        <div className="flex gap-1 mt-0.5 ml-0">
+                          {item.size && <span className="text-xs text-slate-400">Size: {item.size}</span>}
+                          {item.size && item.color && <span className="text-xs text-slate-400">•</span>}
+                          {item.color && <span className="text-xs text-slate-400">Color: {item.color}</span>}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1122,9 +1229,18 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                 <div className="mb-4">
                   <p className="text-xs font-bold text-emerald-500 uppercase mb-2">New Items</p>
                   {lastExchange.newItems.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm py-1">
-                      <span className="text-slate-600">{item.quantity}x {item.name}</span>
-                      <span className="text-emerald-600">{fmtCurrency(item.price * item.quantity)}</span>
+                    <div key={idx} className="text-sm py-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">{item.quantity}x {item.name}</span>
+                        <span className="text-emerald-600">{fmtCurrency(item.price * item.quantity)}</span>
+                      </div>
+                      {(item.size || item.color) && (
+                        <div className="flex gap-1 mt-0.5 ml-0">
+                          {item.size && <span className="text-xs text-slate-400">Size: {item.size}</span>}
+                          {item.size && item.color && <span className="text-xs text-slate-400">•</span>}
+                          {item.color && <span className="text-xs text-slate-400">Color: {item.color}</span>}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1152,18 +1268,15 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
               )}
             </div>
 
-            <div className="p-4 border-t border-slate-100 flex gap-3 bg-white">
+            <div className="p-4 border-t border-slate-100 bg-white">
               <button
-                onClick={() => handlePrintExchangeInvoice(lastExchange)}
-                className="flex-1 flex items-center justify-center gap-2 bg-amber-500 text-white py-3 rounded-xl hover:bg-amber-600 transition-colors font-medium"
+                onClick={() => {
+                  handlePrintExchangeInvoice(lastExchange);
+                  setTimeout(() => setIsExchangeInvoiceOpen(false), 500);
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 text-white py-3 rounded-xl hover:bg-amber-600 transition-colors font-medium"
               >
                 <Printer size={18} /> Print Exchange Receipt
-              </button>
-              <button
-                onClick={() => setIsExchangeInvoiceOpen(false)}
-                className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-medium transition-colors"
-              >
-                Done
               </button>
             </div>
           </div>

@@ -43,9 +43,12 @@ interface StoreContextType {
 
   addToCart: (product: Product) => string;
   removeFromCart: (productId: string) => void;
+  updateCartItemDiscount: (productId: string, discount: number) => void;
+  updateCartQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
 
   completeSale: (paymentMethod: SalesRecord['paymentMethod'], discount: number, customerId?: string) => SalesRecord;
+  updateSale: (saleId: string, updatedItems: CartItem[], discount: number, customerId?: string) => SalesRecord;
   completeExchange: (exchange: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>) => ExchangeRecord;
   adjustStock: (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => void;
   transferStock: (toBranchId: string, items: StockTransferItem[], notes: string) => StockTransfer;
@@ -326,6 +329,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Log edit event so it appears in dashboard activity feed
     if (existing) {
+      const today = new Date();
+      const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       const editLog: StockMovement = {
         id: Math.random().toString(36).substr(2, 9),
         productId: id,
@@ -335,7 +340,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'ADJUSTMENT',
         quantity: 0,
         reason: `Product edited: ${existing.name}`,
-        date: new Date().toISOString()
+        date: `${localDate}T00:00:00.000Z`
       };
       setStockHistory(prev => [editLog, ...prev]);
     }
@@ -383,13 +388,38 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (existing) {
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...product, quantity: 1, discount: 0 }];
     });
     return 'ok';
   };
 
   const removeFromCart = (productId: string) => {
     setCart(prev => prev.filter(item => item.id !== productId));
+  };
+
+  const updateCartItemDiscount = (productId: string, discount: number) => {
+    setCart(prev => prev.map(item => 
+      item.id === productId ? { ...item, discount: Math.max(0, discount) } : item
+    ));
+  };
+
+  const updateCartQuantity = (productId: string, quantity: number) => {
+    if (quantity <= 0) {
+      removeFromCart(productId);
+      return;
+    }
+    
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    
+    const currentStock = product.branchStock[currentBranch.id] || 0;
+    if (quantity > currentStock) {
+      return; // Don't update if exceeds stock
+    }
+    
+    setCart(prev => prev.map(item => 
+      item.id === productId ? { ...item, quantity } : item
+    ));
   };
 
   const clearCart = () => setCart([]);
@@ -402,10 +432,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const customer = customers.find(c => c.id === customerId);
 
+    // Use local date only (without time) to match expense date format
+    const today = new Date();
+    const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
     const newSale: SalesRecord = {
       id: Math.random().toString(36).substr(2, 9),
       invoiceNumber: generateInvoiceNumber(),
-      date: new Date().toISOString(),
+      date: `${localDate}T00:00:00.000Z`,
       items: [...cart],
       subtotal,
       discount: effDiscount,
@@ -433,7 +467,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           type: 'OUT',
           quantity: cartItem.quantity,
           reason: `Sale #${newSale.invoiceNumber}`,
-          date: new Date().toISOString()
+          date: `${localDate}T00:00:00.000Z`
         });
 
         const currentBranchStock = p.branchStock[currentBranch.id] || 0;
@@ -466,15 +500,125 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // ============================================================
+  // UPDATE SALE (for editing recent sales within 10 minutes)
+  // ============================================================
+  const updateSale = (saleId: string, updatedItems: CartItem[], discount: number, customerId?: string): SalesRecord => {
+    const originalSale = salesHistory.find(s => s.id === saleId);
+    if (!originalSale) {
+      throw new Error('Sale not found');
+    }
+
+    const customer = customers.find(c => c.id === customerId);
+    const { subtotal, tax, total, totalCost, discount: effDiscount } = calculateCartTotals(updatedItems, discount, 0);
+
+    const today = new Date();
+    const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const updatedSale: SalesRecord = {
+      ...originalSale,
+      items: [...updatedItems],
+      subtotal,
+      discount: effDiscount,
+      tax,
+      totalAmount: total,
+      totalCost,
+      customerId,
+      customerName: customer ? customer.name : undefined,
+      date: `${localDate}T00:00:00.000Z`,
+    };
+
+    // Calculate stock adjustments
+    const stockAdjustments = new Map<string, number>(); // productId -> net quantity change
+
+    // Original items: these need to be returned to stock (positive adjustment)
+    originalSale.items.forEach(item => {
+      const current = stockAdjustments.get(item.id) || 0;
+      stockAdjustments.set(item.id, current + item.quantity);
+    });
+
+    // Updated items: these need to be removed from stock (negative adjustment)
+    updatedItems.forEach(item => {
+      const current = stockAdjustments.get(item.id) || 0;
+      stockAdjustments.set(item.id, current - item.quantity);
+    });
+
+    // Apply stock adjustments
+    const newStockLogs: StockMovement[] = [];
+    const newProducts = products.map(p => {
+      const adjustment = stockAdjustments.get(p.id);
+      if (adjustment !== undefined && adjustment !== 0) {
+        const currentBranchStock = p.branchStock[currentBranch.id] || 0;
+        const newBranchStock = Math.max(0, currentBranchStock + adjustment);
+        const updatedBranchStock = { ...p.branchStock, [currentBranch.id]: newBranchStock };
+        const newTotalStock = Object.values(updatedBranchStock).reduce((a: number, b: number) => a + b, 0);
+
+        newStockLogs.push({
+          id: Math.random().toString(36).substr(2, 9),
+          productId: p.id,
+          productName: p.name,
+          branchId: currentBranch.id,
+          branchName: currentBranch.name,
+          type: adjustment > 0 ? 'IN' : 'OUT',
+          quantity: Math.abs(adjustment),
+          reason: `Sale Edit #${updatedSale.invoiceNumber}`,
+          date: `${localDate}T00:00:00.000Z`
+        });
+
+        return { ...p, branchStock: updatedBranchStock, stock: newTotalStock };
+      }
+      return p;
+    });
+
+    // Update customer loyalty if changed
+    if (originalSale.customerId !== customerId) {
+      // Remove points from old customer
+      if (originalSale.customerId) {
+        setCustomers(prev => prev.map(c =>
+          c.id === originalSale.customerId
+            ? { ...c, totalSpent: Math.max(0, c.totalSpent - originalSale.totalAmount), loyaltyPoints: Math.max(0, c.loyaltyPoints - Math.floor(originalSale.totalAmount / 10)) }
+            : c
+        ));
+      }
+      // Add points to new customer
+      if (customerId) {
+        setCustomers(prev => prev.map(c =>
+          c.id === customerId
+            ? { ...c, totalSpent: c.totalSpent + total, loyaltyPoints: c.loyaltyPoints + Math.floor(total / 10) }
+            : c
+        ));
+      }
+    } else if (customerId) {
+      // Same customer, adjust the difference
+      const difference = total - originalSale.totalAmount;
+      setCustomers(prev => prev.map(c =>
+        c.id === customerId
+          ? { ...c, totalSpent: c.totalSpent + difference, loyaltyPoints: c.loyaltyPoints + Math.floor(difference / 10) }
+          : c
+      ));
+    }
+
+    setStockHistory(prev => [...newStockLogs, ...prev]);
+    setProducts(newProducts);
+    setSalesHistory(prev => prev.map(s => s.id === saleId ? updatedSale : s));
+
+    // Persist to Supabase
+    dbCall(() => db.completeSaleRPC(updatedSale)); // Reuse the same RPC (it will update if exists)
+
+    return updatedSale;
+  };
+
+  // ============================================================
   // EXCHANGE
   // ============================================================
   const completeExchange = (exchangeData: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>): ExchangeRecord => {
     const exchangeNumber = `EX-${Date.now().toString(36).toUpperCase()}`;
+    const today = new Date();
+    const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const exchange: ExchangeRecord = {
       ...exchangeData,
       id: Math.random().toString(36).substr(2, 9),
       exchangeNumber,
-      date: new Date().toISOString(),
+      date: `${localDate}T00:00:00.000Z`,
       branchId: currentBranch.id,
       branchName: currentBranch.name,
     };
@@ -501,7 +645,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'IN',
         quantity: item.quantity,
         reason: `Exchange Return (${exchangeNumber})`,
-        date: new Date().toISOString(),
+        date: `${localDate}T00:00:00.000Z`,
       });
     });
 
@@ -524,7 +668,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'OUT',
         quantity: item.quantity,
         reason: `Exchange Issue (${exchangeNumber})`,
-        date: new Date().toISOString(),
+        date: `${localDate}T00:00:00.000Z`,
       });
     });
 
@@ -577,6 +721,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       stock: newTotalStock
     } : p));
 
+    const today = new Date();
+    const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const movement: StockMovement = {
       id: Math.random().toString(36).substr(2, 9),
       productId,
@@ -586,7 +732,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       type,
       quantity: logQty,
       reason: `${reason} (${currentBranch.name})`,
-      date: new Date().toISOString()
+      date: `${localDate}T00:00:00.000Z`
     };
 
     setStockHistory(prev => [movement, ...prev]);
@@ -608,10 +754,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
     const totalValue = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
 
+    const today = new Date();
+    const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const transfer: StockTransfer = {
       id: Math.random().toString(36).substr(2, 9),
       transferNumber,
-      date: new Date().toISOString(),
+      date: `${localDate}T00:00:00.000Z`,
       fromBranchId: currentBranch.id,
       fromBranchName: currentBranch.name,
       toBranchId,
@@ -644,7 +792,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'TRANSFER',
         quantity: transferItem.quantity,
         reason: `Transfer OUT → ${toBranch.name} (${transferNumber})`,
-        date: new Date().toISOString(),
+        date: `${localDate}T00:00:00.000Z`,
       });
 
       // Log IN to destination branch
@@ -657,7 +805,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         type: 'TRANSFER',
         quantity: transferItem.quantity,
         reason: `Transfer IN ← ${currentBranch.name} (${transferNumber})`,
-        date: new Date().toISOString(),
+        date: `${localDate}T00:00:00.000Z`,
       });
 
       return { ...p, branchStock: updatedBranchStock, stock: newTotalStock };
@@ -836,8 +984,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setBranch, addBranch, updateBranch,
       addProduct, updateProduct, deleteProduct,
       addCustomer, updateCustomer, deleteCustomer,
-      addToCart, removeFromCart, clearCart,
-      completeSale, completeExchange, adjustStock, transferStock,
+      addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, clearCart,
+      completeSale, updateSale, completeExchange, adjustStock, transferStock,
       addCategory, removeCategory, addBrand, removeBrand,
       addSupplier, updateSupplier, deleteSupplier, addSupplierTransaction,
       addExpense, deleteExpense,

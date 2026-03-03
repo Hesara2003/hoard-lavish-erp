@@ -105,6 +105,12 @@ ipcMain.on('check-for-updates', () => {
     autoUpdater.checkForUpdatesAndNotify();
 });
 
+ipcMain.on('silent-print', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.print({ silent: true, printBackground: true });
+    }
+});
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();

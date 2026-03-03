@@ -53,6 +53,8 @@ export const mapProduct = (r: any): Product => ({
     imageUrl: r.image_url ?? undefined,
     color: r.color ?? '',
     size: r.size ?? '',
+    barcode: r.barcode ?? '',
+    barcode2: r.barcode2 ?? '',
 });
 
 export async function fetchProductsWithStock(): Promise<Product[]> {
@@ -74,6 +76,8 @@ export async function insertProduct(product: Product, branches: Branch[]): Promi
         image_url: product.imageUrl ?? null,
         color: product.color ?? '',
         size: product.size ?? '',
+        barcode: product.barcode ?? '',
+        barcode2: product.barcode2 ?? '',
     }).select('id').single();
     if (error) throw error;
 
@@ -102,6 +106,8 @@ export async function updateProduct(id: string, updates: Partial<Product>): Prom
     if (updates.imageUrl !== undefined) dbUpdates.image_url = updates.imageUrl;
     if (updates.color !== undefined) dbUpdates.color = updates.color;
     if (updates.size !== undefined) dbUpdates.size = updates.size;
+    if (updates.barcode !== undefined) dbUpdates.barcode = updates.barcode;
+    if (updates.barcode2 !== undefined) dbUpdates.barcode2 = updates.barcode2;
 
     if (Object.keys(dbUpdates).length > 0) {
         const { error } = await supabase.from('products').update(dbUpdates).eq('id', id);
@@ -203,6 +209,7 @@ export async function completeSaleRPC(sale: SalesRecord): Promise<string> {
             quantity: item.quantity,
             price: item.price,
             cost_price: item.costPrice,
+            discount: item.discount ?? 0,
         })),
     });
     if (error) throw error;
@@ -219,6 +226,7 @@ export const mapSale = (r: any): SalesRecord => ({
         quantity: si.quantity as number,
         price: Number(si.price),
         costPrice: Number(si.cost_price || si.costPrice),
+        discount: Number(si.discount ?? 0),
         category: '',
         brand: '',
         stock: 0,
@@ -397,6 +405,7 @@ export const mapExpense = (r: any): Expense => ({
     date: r.date,
     branchId: r.branch_id,
     branchName: r.branch_name,
+    paymentMethod: r.payment_method,
 });
 
 export async function fetchExpenses(): Promise<Expense[]> {
@@ -416,6 +425,7 @@ export async function insertExpense(expense: Expense): Promise<Expense> {
         date: expense.date,
         branch_id: expense.branchId,
         branch_name: expense.branchName,
+        payment_method: expense.paymentMethod,
     }).select().single();
     if (error) throw error;
     return {
@@ -426,6 +436,7 @@ export async function insertExpense(expense: Expense): Promise<Expense> {
         date: data.date,
         branchId: data.branch_id,
         branchName: data.branch_name,
+        paymentMethod: data.payment_method,
     };
 }
 
