@@ -21,10 +21,12 @@ export interface Product {
   color?: string;
   size?: string;
   barcode?: string;
+  barcode2?: string;
 }
 
 export interface CartItem extends Product {
   quantity: number;
+  discount?: number;
 }
 
 export interface Customer {
@@ -46,7 +48,7 @@ export interface SalesRecord {
   tax: number;
   totalAmount: number;
   totalCost: number;
-  paymentMethod: 'Cash' | 'Card' | 'Digital';
+  paymentMethod: 'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay';
   customerId?: string;
   customerName?: string;
   branchId: string;
@@ -130,6 +132,7 @@ export interface Expense {
   date: string;
   branchId: string;
   branchName: string;
+  paymentMethod: 'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay';
 }
 
 export type Role = 'ADMIN' | 'MANAGER' | 'CASHIER';
@@ -160,7 +163,7 @@ export interface ExchangeRecord {
   returnedTotal: number;
   newTotal: number;
   difference: number; // positive = customer pays more, negative = store refunds/credit
-  paymentMethod: 'Cash' | 'Card' | 'Digital';
+  paymentMethod: 'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay';
   customerId?: string;
   customerName?: string;
   branchId: string;

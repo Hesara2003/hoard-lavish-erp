@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { DollarSign, ShoppingBag, TrendingUp, CreditCard, Wallet, Calendar, Trophy, Award, FileDown, BookOpen, Activity, Package, UserCheck, ArrowDownCircle, ArrowUpCircle, RefreshCw, Eye, X, Download } from 'lucide-react';
+import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, CreditCard, Wallet, Calendar, Trophy, Award, FileDown, BookOpen, Activity, Package, UserCheck, ArrowDownCircle, ArrowUpCircle, RefreshCw, Eye, X, Download, ArrowRightLeft, Edit2, Printer, Plus, Minus, Trash2, CheckCircle } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { CartItem, SalesRecord } from '../types';
 
 type FilterMode = 'daily' | 'monthly';
 
@@ -12,7 +13,7 @@ const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const Dashboard: React.FC = () => {
-  const { salesHistory, products, expenses, supplierTransactions, stockHistory, stockTransfers, exchangeHistory, currentUser } = useStore();
+  const { salesHistory, products, expenses, supplierTransactions, stockHistory, stockTransfers, exchangeHistory, currentUser, updateSale, customers } = useStore();
   const role = currentUser?.role || 'CASHIER';
   const isAdmin = role === 'ADMIN';
 
@@ -23,6 +24,15 @@ const Dashboard: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(
     `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   );
+  const [detailModalType, setDetailModalType] = useState<'revenue' | 'expenses' | 'profit' | null>(null);
+
+  // --- Edit Sale State ---
+  const [editingSale, setEditingSale] = useState<SalesRecord | null>(null);
+  const [editCart, setEditCart] = useState<CartItem[]>([]);
+  const [editDiscount, setEditDiscount] = useState<number>(0);
+  const [editCustomerId, setEditCustomerId] = useState<string | undefined>(undefined);
+  const [isEditInvoiceOpen, setIsEditInvoiceOpen] = useState(false);
+  const [lastEditedSale, setLastEditedSale] = useState<SalesRecord | null>(null);
 
   // --- Helpers ---
   const matchesDate = (dateString: string, targetDate: string) => dateString.startsWith(targetDate);
@@ -163,6 +173,15 @@ const Dashboard: React.FC = () => {
     return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredTransfers, filteredExchanges]);
 
+  // --- Recent Sales (Last 10 minutes) ---
+  const recentEditableSales = useMemo(() => {
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    return salesHistory.filter(sale => {
+      const saleTime = new Date(sale.date).getTime();
+      return saleTime >= tenMinutesAgo;
+    }).slice(0, 10); // Show max 10 sales
+  }, [salesHistory]);
+
   // --- Activity Feed ---
   const activityFeed = useMemo(() => {
     type ActivityItem = { id: string; date: string; icon: 'sale' | 'stock_in' | 'stock_out' | 'adjustment'; message: string; detail: string; color: string };
@@ -259,7 +278,37 @@ const Dashboard: React.FC = () => {
   };
 
   // --- Report Generation (PDF) ---
-  const generateReport = () => {
+  const generateReport = (paymentFilter: 'all' | 'cash' | 'card' = 'all') => {
+    // Filter sales by payment method
+    const cardMethods = ['Card', 'PayHere', 'Online Transfer', 'MintPay'];
+    const paymentFilteredSales = paymentFilter === 'all' 
+      ? filteredSales 
+      : paymentFilter === 'cash'
+      ? filteredSales.filter(s => s.paymentMethod === 'Cash')
+      : filteredSales.filter(s => cardMethods.includes(s.paymentMethod));
+    
+    const paymentFilteredExchanges = paymentFilter === 'all'
+      ? filteredExchanges
+      : paymentFilter === 'cash'
+      ? filteredExchanges.filter(e => e.paymentMethod === 'Cash')
+      : filteredExchanges.filter(e => cardMethods.includes(e.paymentMethod));
+    
+    const paymentFilteredExpenses = paymentFilter === 'all'
+      ? filteredExpenses
+      : paymentFilter === 'cash'
+      ? filteredExpenses.filter(e => e.paymentMethod === 'Cash')
+      : filteredExpenses.filter(e => cardMethods.includes(e.paymentMethod));
+    
+    // Calculate filtered metrics
+    const filteredSalesRevenue = paymentFilteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const filteredExchangeRevenue = paymentFilteredExchanges.reduce((sum, e) => sum + e.difference, 0);
+    const filteredRevenue = filteredSalesRevenue + filteredExchangeRevenue;
+    const filteredCost = paymentFilteredSales.reduce((sum, s) => sum + (s.totalCost || 0), 0);
+    const filteredExpensesTotal = paymentFilteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const filteredGrossProfit = filteredRevenue - filteredCost;
+    const filteredNetProfit = filteredGrossProfit - filteredExpensesTotal;
+    const filteredTxCount = paymentFilteredSales.length + paymentFilteredExchanges.length;
+    
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     
@@ -274,7 +323,8 @@ const Dashboard: React.FC = () => {
     
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${filterMode === 'daily' ? 'Daily' : 'Monthly'} Analysis Report`, pageWidth / 2, 28, { align: 'center' });
+    const reportTitle = paymentFilter === 'cash' ? 'Cash Payments' : paymentFilter === 'card' ? 'Card Payments' : 'Analysis';
+    doc.text(`${filterMode === 'daily' ? 'Daily' : 'Monthly'} ${reportTitle} Report`, pageWidth / 2, 28, { align: 'center' });
     doc.text(`Period: ${periodLabel}`, pageWidth / 2, 35, { align: 'center' });
     
     // Reset text color
@@ -294,14 +344,16 @@ const Dashboard: React.FC = () => {
     doc.setDrawColor(200, 200, 200);
     doc.line(14, 61, pageWidth - 14, 61);
     
-    const profitMargin = revenue ? ((profit / revenue) * 100).toFixed(1) : '0';
+    const profitMargin = filteredRevenue ? ((filteredNetProfit / filteredRevenue) * 100).toFixed(1) : '0';
     
     const summaryData = [
-      ['Total Revenue', fmtCurrency(revenue)],
-      ['Total Cost (COGS)', fmtCurrency(cost)],
-      ['Net Profit', fmtCurrency(profit)],
-      ['Profit Margin', `${profitMargin}%`],
-      ['Transactions', txCount.toString()]
+      ['Total Revenue', fmtCurrency(filteredRevenue)],
+      ['Total Cost (COGS)', fmtCurrency(filteredCost)],
+      ['Gross Profit', fmtCurrency(filteredGrossProfit)],
+      ['Operating Expenses', fmtCurrency(filteredExpensesTotal)],
+      ['Net Profit', fmtCurrency(filteredNetProfit)],
+      ['Net Profit Margin', `${profitMargin}%`],
+      ['Transactions', filteredTxCount.toString()]
     ];
     
     autoTable(doc, {
@@ -343,7 +395,27 @@ const Dashboard: React.FC = () => {
     });
     
     // Transaction Ledger Section
-    if (ledger.length > 0) {
+    // Create filtered ledger based on payment method
+    const filteredLedger = [
+      ...paymentFilteredSales.map(s => ({
+        id: s.id, date: s.date, desc: `Sale #${s.invoiceNumber}`, amount: s.totalAmount, 
+        type: 'IN' as const, category: 'Sales', paymentMethod: s.paymentMethod
+      })),
+      ...paymentFilteredExchanges.map(e => ({
+        id: e.id, date: e.date,
+        desc: `Exchange #${e.exchangeNumber}${e.originalInvoiceNumber ? ` (Sale #${e.originalInvoiceNumber})` : ''}: ${e.description || 'Product exchange'}`,
+        amount: Math.abs(e.difference),
+        type: (e.difference >= 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
+        category: 'Exchange',
+        paymentMethod: e.paymentMethod
+      })),
+      ...paymentFilteredExpenses.map(e => ({
+        id: e.id, date: e.date, desc: e.description, amount: e.amount, 
+        type: 'OUT' as const, category: e.category, paymentMethod: e.paymentMethod
+      }))
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    if (filteredLedger.length > 0) {
       const afterPerformersY = (doc as any).lastAutoTable.finalY + 10;
       
       doc.setFontSize(14);
@@ -351,26 +423,47 @@ const Dashboard: React.FC = () => {
       doc.text('Transaction Ledger', 14, afterPerformersY);
       doc.line(14, afterPerformersY + 3, pageWidth - 14, afterPerformersY + 3);
       
-      const ledgerTableData = ledger.map(item => {
+      // Include payment method column for card reports
+      const includePaymentMethod = paymentFilter === 'card';
+      const ledgerTableData = filteredLedger.map(item => {
         const date = new Date(item.date).toLocaleDateString();
         const sign = item.type === 'OUT' ? '-' : '+';
-        return [date, item.type, item.category, sign + fmtCurrency(item.amount), item.desc];
+        const baseRow = [date, item.type, item.category, sign + fmtCurrency(item.amount), item.desc];
+        if (includePaymentMethod) {
+          baseRow.splice(4, 0, item.paymentMethod); // Insert payment method before description
+        }
+        return baseRow;
       });
+      
+      const headers = includePaymentMethod 
+        ? [['Date', 'Type', 'Category', 'Amount', 'Payment', 'Description']]
+        : [['Date', 'Type', 'Category', 'Amount', 'Description']];
+      
+      const columnStyles = includePaymentMethod
+        ? {
+            0: { cellWidth: 22 },
+            1: { cellWidth: 13 },
+            2: { cellWidth: 24 },
+            3: { cellWidth: 30, halign: 'right' },
+            4: { cellWidth: 28 },
+            5: { cellWidth: 'auto' }
+          }
+        : {
+            0: { cellWidth: 25 },
+            1: { cellWidth: 15 },
+            2: { cellWidth: 28 },
+            3: { cellWidth: 35, halign: 'right' },
+            4: { cellWidth: 'auto' }
+          };
       
       autoTable(doc, {
         startY: afterPerformersY + 7,
-        head: [['Date', 'Type', 'Category', 'Amount', 'Description']],
+        head: headers,
         body: ledgerTableData,
         theme: 'striped',
         styles: { fontSize: 9, cellPadding: 2 },
         headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
-        columnStyles: {
-          0: { cellWidth: 25 },
-          1: { cellWidth: 15 },
-          2: { cellWidth: 28 },
-          3: { cellWidth: 35, halign: 'right' },
-          4: { cellWidth: 'auto' }
-        },
+        columnStyles: columnStyles as any,
         margin: { left: 14, right: 14 },
         didParseCell: (data) => {
           if (data.section === 'body' && data.column.index === 3) {
@@ -430,16 +523,22 @@ const Dashboard: React.FC = () => {
   }, [previewBlob, previewFilename]);
 
   // --- Reusable Components ---
-  const StatCard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
-    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition-shadow">
+  const StatCard = ({ title, value, subtext, icon: Icon, colorClass, onClick }: any) => (
+    <div 
+      className={`bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-start gap-4 transition-all ${
+        onClick ? 'hover:shadow-md hover:scale-[1.02] cursor-pointer active:scale-[0.98]' : 'hover:shadow-md'
+      }`}
+      onClick={onClick}
+    >
       <div className={`p-3 rounded-lg ${colorClass} text-white`}>
         <Icon size={24} />
       </div>
-      <div>
+      <div className="flex-1">
         <p className="text-slate-500 text-sm font-medium">{title}</p>
         <h3 className="text-2xl font-bold text-slate-900 mt-1">{value}</h3>
         {subtext && <p className="text-xs text-slate-400 mt-1">{subtext}</p>}
       </div>
+      {onClick && <Eye size={16} className="text-slate-300 mt-1" />}
     </div>
   );
 
@@ -464,16 +563,366 @@ const Dashboard: React.FC = () => {
             className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-slate-300 cursor-pointer" />
         )}
       </div>
-      <button onClick={generateReport}
-        className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm"
-        title="Preview analysis report">
-        <Eye size={14} /> Report
+      <button onClick={() => generateReport('cash')}
+        className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm"
+        title="Generate cash payment report">
+        <Wallet size={14} /> Cash Report
+      </button>
+      <button onClick={() => generateReport('card')}
+        className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
+        title="Generate card payment report (includes PayHere, Online Transfer, MintPay)">
+        <CreditCard size={14} /> Card Report
       </button>
     </div>
   );
 
+  // --- Edit Sale Handlers ---
+  const handleEditSale = (sale: SalesRecord) => {
+    setEditingSale(sale);
+    setEditCart([...sale.items]);
+    setEditDiscount(sale.discount);
+    setEditCustomerId(sale.customerId);
+  };
+
+  const handleEditCartQuantity = (productId: string, quantity: number) => {
+    setEditCart(prev => prev.map(item =>
+      item.id === productId ? { ...item, quantity: Math.max(1, quantity) } : item
+    ));
+  };
+
+  const handleRemoveEditCartItem = (productId: string) => {
+    setEditCart(prev => prev.filter(item => item.id !== productId));
+  };
+
+  const handleUpdateSale = () => {
+    if (!editingSale || editCart.length === 0) return;
+    const updatedSale = updateSale(editingSale.id, editCart, editDiscount, editCustomerId);
+    setLastEditedSale(updatedSale);
+    setIsEditInvoiceOpen(true);
+    setEditingSale(null);
+    setEditCart([]);
+    setEditDiscount(0);
+    setEditCustomerId(undefined);
+  };
+
+  const handlePrintEditedSale = () => {
+    if (window.electronAPI?.silentPrint) {
+      window.electronAPI.silentPrint();
+    } else {
+      window.print();
+    }
+    setTimeout(() => setIsEditInvoiceOpen(false), 500);
+  };
+
+  const editCartSubtotal = editCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const editCartTotal = Math.max(0, editCartSubtotal - editDiscount);
+
   return (
     <div className="flex-1 bg-slate-50 p-6 md:p-8 overflow-y-auto">
+
+      {/* DETAIL BREAKDOWN MODAL */}
+      {detailModalType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDetailModalType(null)}>
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${detailModalType === 'revenue' ? 'bg-emerald-50 text-emerald-600' : detailModalType === 'expenses' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+                  {detailModalType === 'revenue' && <DollarSign size={18} />}
+                  {detailModalType === 'expenses' && <CreditCard size={18} />}
+                  {detailModalType === 'profit' && <Wallet size={18} />}
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800">
+                    {detailModalType === 'revenue' && 'Revenue Breakdown'}
+                    {detailModalType === 'expenses' && 'Expense Breakdown'}
+                    {detailModalType === 'profit' && 'Net Profit Breakdown'}
+                  </h3>
+                  <p className="text-xs text-slate-400">{periodLabel}</p>
+                </div>
+              </div>
+              <button onClick={() => setDetailModalType(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                <X size={20} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[calc(85vh-120px)]">
+              {detailModalType === 'revenue' && (
+                <div>
+                  <div className="bg-emerald-50 p-4 rounded-lg mb-6">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-600">Total Revenue</span>
+                      <span className="text-2xl font-bold text-emerald-600">{fmtCurrency(revenue)}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Sales */}
+                  {filteredSales.length > 0 && (
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-1.5 bg-emerald-50 rounded-lg text-emerald-600">
+                          <ShoppingBag size={14} />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                          Sales ({filteredSales.length})
+                        </h4>
+                      </div>
+                      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                            <tr>
+                              <th className="p-3">Invoice</th>
+                              <th className="p-3">Date</th>
+                              <th className="p-3">Customer</th>
+                              <th className="p-3 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredSales.map(sale => (
+                              <tr key={sale.id} className="hover:bg-slate-50">
+                                <td className="p-3 font-medium text-slate-900">#{sale.invoiceNumber}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(sale.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-600 text-xs">{sale.customerName || 'Walk-in Customer'}</td>
+                                <td className="p-3 text-right font-bold text-emerald-600">+{fmtCurrency(sale.totalAmount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Exchanges with positive difference */}
+                  {filteredExchanges.filter(e => e.difference > 0).length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-1.5 bg-emerald-50 rounded-lg text-emerald-600">
+                          <ArrowRightLeft size={14} />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                          Exchange Revenue ({filteredExchanges.filter(e => e.difference > 0).length})
+                        </h4>
+                      </div>
+                      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                            <tr>
+                              <th className="p-3">Exchange #</th>
+                              <th className="p-3">Date</th>
+                              <th className="p-3">Description</th>
+                              <th className="p-3 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredExchanges.filter(e => e.difference > 0).map(ex => (
+                              <tr key={ex.id} className="hover:bg-slate-50">
+                                <td className="p-3 font-medium text-slate-900">{ex.exchangeNumber}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(ex.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-600 text-xs">{ex.description || 'Product exchange'}</td>
+                                <td className="p-3 text-right font-bold text-emerald-600">+{fmtCurrency(ex.difference)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {filteredSales.length === 0 && filteredExchanges.filter(e => e.difference > 0).length === 0 && (
+                    <div className="p-12 text-center text-slate-400">
+                      <DollarSign size={32} className="mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">No revenue transactions in this period</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {detailModalType === 'expenses' && (
+                <div>
+                  <div className="bg-rose-50 p-4 rounded-lg mb-6">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-600">Total Expenses (COGS)</span>
+                      <span className="text-2xl font-bold text-rose-600">{fmtCurrency(cost)}</span>
+                    </div>
+                  </div>
+                  
+                  {/* COGS from Sales */}
+                  {filteredSales.length > 0 && (
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-1.5 bg-rose-50 rounded-lg text-rose-600">
+                          <Package size={14} />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                          Cost of Goods Sold ({filteredSales.length} sales)
+                        </h4>
+                      </div>
+                      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                            <tr>
+                              <th className="p-3">Invoice</th>
+                              <th className="p-3">Date</th>
+                              <th className="p-3">Items</th>
+                              <th className="p-3 text-right">Cost</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredSales.map(sale => (
+                              <tr key={sale.id} className="hover:bg-slate-50">
+                                <td className="p-3 font-medium text-slate-900">#{sale.invoiceNumber}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(sale.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-600 text-xs">{sale.items.length} items</td>
+                                <td className="p-3 text-right font-bold text-rose-600">-{fmtCurrency(sale.totalCost || 0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Operating Expenses */}
+                  {filteredExpenses.length > 0 && (
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-1.5 bg-rose-50 rounded-lg text-rose-600">
+                          <CreditCard size={14} />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                          Operating Expenses ({filteredExpenses.length})
+                        </h4>
+                      </div>
+                      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                            <tr>
+                              <th className="p-3">Description</th>
+                              <th className="p-3">Date</th>
+                              <th className="p-3">Category</th>
+                              <th className="p-3 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredExpenses.map(expense => (
+                              <tr key={expense.id} className="hover:bg-slate-50">
+                                <td className="p-3 font-medium text-slate-900">{expense.description}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(expense.date).toLocaleDateString()}</td>
+                                <td className="p-3">
+                                  <span className="bg-slate-100 px-2 py-1 rounded text-xs font-medium text-slate-600">{expense.category}</span>
+                                </td>
+                                <td className="p-3 text-right font-bold text-rose-600">-{fmtCurrency(expense.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Supplier Payments */}
+                  {filteredSupplierTx.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-1.5 bg-rose-50 rounded-lg text-rose-600">
+                          <TrendingDown size={14} />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                          Supplier Payments ({filteredSupplierTx.length})
+                        </h4>
+                      </div>
+                      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                            <tr>
+                              <th className="p-3">Supplier</th>
+                              <th className="p-3">Date</th>
+                              <th className="p-3">Reference</th>
+                              <th className="p-3 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredSupplierTx.map(tx => (
+                              <tr key={tx.id} className="hover:bg-slate-50">
+                                <td className="p-3 font-medium text-slate-900">{tx.supplierName}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(tx.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-600 text-xs">{tx.reference || 'Payment'}</td>
+                                <td className="p-3 text-right font-bold text-rose-600">-{fmtCurrency(tx.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {filteredSales.length === 0 && filteredExpenses.length === 0 && filteredSupplierTx.length === 0 && (
+                    <div className="p-12 text-center text-slate-400">
+                      <CreditCard size={32} className="mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">No expenses in this period</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {detailModalType === 'profit' && (
+                <div>
+                  <div className="bg-white rounded-lg border border-slate-200 p-5 mb-6">
+                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+                      <span className="text-sm font-medium text-slate-600">Total Revenue</span>
+                      <span className="font-bold text-emerald-600">{fmtCurrency(revenue)}</span>
+                    </div>
+                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+                      <span className="text-sm font-medium text-slate-600">Total Expenses</span>
+                      <span className="font-bold text-rose-600">-{fmtCurrency(cost)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">Net Profit</span>
+                      <span className={`text-2xl font-bold ${profit >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                        {fmtCurrency(profit)}
+                      </span>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-xs text-slate-500">Profit Margin</span>
+                      <span className="text-xs font-bold text-slate-700">
+                        {revenue ? ((profit / revenue) * 100).toFixed(1) : 0}%
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={() => setDetailModalType('revenue')}
+                      className="bg-white rounded-lg border border-slate-200 p-5 hover:shadow-md transition-shadow text-left group"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
+                          <DollarSign size={16} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Revenue Details</span>
+                      </div>
+                      <p className="text-xl font-bold text-emerald-600 mb-1">{fmtCurrency(revenue)}</p>
+                      <p className="text-xs text-slate-500">{txCount} transactions</p>
+                    </button>
+                    
+                    <button
+                      onClick={() => setDetailModalType('expenses')}
+                      className="bg-white rounded-lg border border-slate-200 p-5 hover:shadow-md transition-shadow text-left group"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-2 bg-rose-50 rounded-lg text-rose-600">
+                          <CreditCard size={16} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Expense Details</span>
+                      </div>
+                      <p className="text-xl font-bold text-rose-600 mb-1">{fmtCurrency(cost)}</p>
+                      <p className="text-xs text-slate-500">Cost of goods sold</p>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PDF PREVIEW MODAL */}
       {previewDataUri && (
@@ -528,9 +977,9 @@ const Dashboard: React.FC = () => {
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard title="Revenue" value={fmtCurrency(revenue)} subtext={`${txCount} transactions`} icon={DollarSign} colorClass="bg-emerald-500" />
-          <StatCard title="Expenses (COGS)" value={fmtCurrency(cost)} subtext="Cost of Goods Sold" icon={CreditCard} colorClass="bg-rose-500" />
-          <StatCard title="Net Profit" value={fmtCurrency(profit)} subtext={`Margin: ${revenue ? ((profit / revenue) * 100).toFixed(1) : 0}%`} icon={Wallet} colorClass="bg-amber-500" />
+          <StatCard title="Revenue" value={fmtCurrency(revenue)} subtext={`${txCount} transactions`} icon={DollarSign} colorClass="bg-emerald-500" onClick={() => setDetailModalType('revenue')} />
+          <StatCard title="Expenses (COGS)" value={fmtCurrency(cost)} subtext="Cost of Goods Sold" icon={CreditCard} colorClass="bg-rose-500" onClick={() => setDetailModalType('expenses')} />
+          <StatCard title="Net Profit" value={fmtCurrency(profit)} subtext={`Margin: ${revenue ? ((profit / revenue) * 100).toFixed(1) : 0}%`} icon={Wallet} colorClass="bg-amber-500" onClick={() => setDetailModalType('profit')} />
           <StatCard title="Pending Actions" value={lowStockCount} subtext="Low stock alerts" icon={ShoppingBag} colorClass="bg-blue-500" />
         </div>
       </div>
@@ -711,6 +1160,236 @@ const Dashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* EDIT RECENT SALES */}
+      {recentEditableSales.length > 0 && (
+        <div className="mb-8">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 rounded-lg text-amber-600"><Edit2 size={18} /></div>
+                <div>
+                  <h3 className="font-bold text-slate-800">Edit Recent Sales</h3>
+                  <p className="text-xs text-slate-400">Sales from the last 10 minutes can be edited</p>
+                </div>
+              </div>
+              <span className="text-xs text-slate-400 font-medium bg-amber-50 px-3 py-1 rounded-full">{recentEditableSales.length} editable</span>
+            </div>
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                <tr>
+                  <th className="p-4">Invoice</th>
+                  <th className="p-4">Customer</th>
+                  <th className="p-4">Items</th>
+                  <th className="p-4 text-right">Amount</th>
+                  <th className="p-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {recentEditableSales.map((sale) => (
+                  <tr key={sale.id} className="hover:bg-slate-50">
+                    <td className="p-4 font-medium text-slate-900">#{sale.invoiceNumber}</td>
+                    <td className="p-4 text-slate-600">{sale.customerName || 'Walk-in'}</td>
+                    <td className="p-4 text-slate-500">{sale.items.length} item(s)</td>
+                    <td className="p-4 text-right font-bold text-slate-900">{fmtCurrency(sale.totalAmount)}</td>
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => handleEditSale(sale)}
+                        className="inline-flex items-center gap-1.5 bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-600 transition-colors"
+                      >
+                        <Edit2 size={14} /> Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT SALE MODAL */}
+      {editingSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-amber-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 rounded-full text-amber-600"><Edit2 size={20} /></div>
+                <div>
+                  <h3 className="font-bold text-slate-800">Edit Sale #{editingSale.invoiceNumber}</h3>
+                  <p className="text-xs text-slate-500">Modify items and quantities</p>
+                </div>
+              </div>
+              <button onClick={() => setEditingSale(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {editCart.map((item) => (
+                <div key={item.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="flex-1">
+                    <h4 className="font-bold text-slate-800">{item.name}</h4>
+                    <p className="text-xs text-slate-500">{fmtCurrency(item.price)} each</p>
+                    {(item.size || item.color) && (
+                      <div className="flex gap-2 mt-1">
+                        {item.size && <span className="text-xs bg-white px-2 py-0.5 rounded border border-slate-200">{item.size}</span>}
+                        {item.color && <span className="text-xs bg-white px-2 py-0.5 rounded border border-slate-200">{item.color}</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleEditCartQuantity(item.id, item.quantity - 1)}
+                      className="p-1.5 bg-slate-200 hover:bg-slate-300 rounded-lg transition-colors"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="w-12 text-center font-bold text-slate-900">{item.quantity}</span>
+                    <button
+                      onClick={() => handleEditCartQuantity(item.id, item.quantity + 1)}
+                      className="p-1.5 bg-slate-200 hover:bg-slate-300 rounded-lg transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  <div className="text-right min-w-[100px]">
+                    <p className="font-bold text-slate-900">{fmtCurrency(item.price * item.quantity)}</p>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveEditCartItem(item.id)}
+                    className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <div className="flex justify-between text-sm text-slate-600">
+                  <span>Subtotal</span>
+                  <span className="font-bold">{fmtCurrency(editCartSubtotal)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Discount</span>
+                  <input
+                    type="number"
+                    value={editDiscount}
+                    onChange={(e) => setEditDiscount(Math.max(0, Number(e.target.value)))}
+                    className="w-32 px-3 py-1 border border-slate-300 rounded-lg text-right"
+                  />
+                </div>
+                <div className="flex justify-between text-lg font-bold text-slate-900 pt-2 border-t border-slate-200">
+                  <span>Total</span>
+                  <span>{fmtCurrency(editCartTotal)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 flex gap-3 bg-white">
+              <button
+                onClick={() => setEditingSale(null)}
+                className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateSale}
+                disabled={editCart.length === 0}
+                className="flex-1 py-3 bg-amber-500 text-white rounded-xl hover:bg-amber-600 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Update Sale
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDITED SALE INVOICE */}
+      {isEditInvoiceOpen && lastEditedSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-700 flex justify-between items-center text-white">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="text-amber-400" size={24} />
+                  <h2 className="text-xl font-bold">Sale Updated</h2>
+                </div>
+                <p className="text-slate-400 text-sm mt-1">Invoice #{lastEditedSale.invoiceNumber}</p>
+              </div>
+              <button onClick={() => setIsEditInvoiceOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 bg-slate-50 print:bg-white" id="edited-invoice-preview">
+              <div className="text-center mb-8">
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">HOARD LAVISH</h1>
+                <p className="text-slate-500 text-sm mt-1">Luxury Fashion Retail</p>
+                <p className="text-amber-600 text-xs mt-2 font-bold">EDITED INVOICE</p>
+                <p className="text-slate-400 text-xs mt-1">{new Date().toLocaleString()}</p>
+                <p className="text-slate-400 text-xs mt-1 font-bold">{lastEditedSale.branchName}</p>
+              </div>
+
+              {lastEditedSale.customerName && (
+                <div className="mb-6 pb-6 border-b border-dashed border-slate-200">
+                  <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Customer</p>
+                  <p className="font-bold text-slate-900">{lastEditedSale.customerName}</p>
+                </div>
+              )}
+
+              <div className="space-y-3 mb-6">
+                {lastEditedSale.items.map((item, idx) => (
+                  <div key={idx} className="flex justify-between text-sm">
+                    <div className="flex gap-2 flex-1">
+                      <span className="font-bold text-slate-700">{item.quantity}x</span>
+                      <div className="flex-1">
+                        <span className="text-slate-600">{item.name}</span>
+                        {(item.size || item.color) && (
+                          <div className="flex gap-1 mt-0.5">
+                            {item.size && <span className="text-xs text-slate-400">Size: {item.size}</span>}
+                            {item.size && item.color && <span className="text-xs text-slate-400">•</span>}
+                            {item.color && <span className="text-xs text-slate-400">Color: {item.color}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <span className="font-medium text-slate-900 ml-2">{fmtCurrency(item.price * item.quantity)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-slate-200 pt-4 space-y-2">
+                <div className="flex justify-between text-sm text-slate-500">
+                  <span>Subtotal</span>
+                  <span>{fmtCurrency(lastEditedSale.subtotal)}</span>
+                </div>
+                {lastEditedSale.discount > 0 && (
+                  <div className="flex justify-between text-sm text-amber-600">
+                    <span>Discount</span>
+                    <span>-{fmtCurrency(lastEditedSale.discount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-lg font-bold text-slate-900 pt-2 border-t border-slate-200 mt-2">
+                  <span>Total</span>
+                  <span>{fmtCurrency(lastEditedSale.totalAmount)}</span>
+                </div>
+              </div>
+
+              <div className="mt-8 text-center">
+                <p className="text-[10px] text-slate-400">Thank you for shopping with us.</p>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-white">
+              <button
+                onClick={handlePrintEditedSale}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 text-white py-3 rounded-xl hover:bg-amber-600 transition-colors font-medium"
+              >
+                <Printer size={18} /> Print Updated Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

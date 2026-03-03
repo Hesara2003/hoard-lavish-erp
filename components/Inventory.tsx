@@ -50,6 +50,8 @@ interface VariationRow {
   price: number;
   costPrice: number;
   quantity: number;
+  barcode?: string;
+  barcode2?: string;
 }
 
 const Inventory: React.FC = () => {
@@ -153,7 +155,9 @@ const Inventory: React.FC = () => {
       sku: '',
       price: Number(editingProduct?.price) || 0,
       costPrice: Number(editingProduct?.costPrice) || 0,
-      quantity: 0
+      quantity: 0,
+      barcode: '',
+      barcode2: ''
     }]);
   };
 
@@ -180,6 +184,8 @@ const Inventory: React.FC = () => {
           price: v.price,
           costPrice: v.costPrice,
           sku: v.sku || `SKU-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+          barcode: v.barcode || '',
+          barcode2: v.barcode2 || '',
           description: editingProduct.description || '',
           minStockLevel: Number(editingProduct.minStockLevel) || 5,
           stock: v.quantity,
@@ -432,43 +438,115 @@ const Inventory: React.FC = () => {
     const color = editingProduct.color || '';
     const size = editingProduct.size || '';
     if (!barcode) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+
+    // Create a temporary container for printing
+    const printContainer = document.createElement('div');
+    printContainer.style.position = 'fixed';
+    printContainer.style.top = '0';
+    printContainer.style.left = '0';
+    printContainer.style.width = '100%';
+    printContainer.style.height = '100%';
+    printContainer.style.zIndex = '-9999';
+    printContainer.style.visibility = 'hidden';
 
     let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;">';
-    barsHtml += '<div style="width:3px;height:55px;background:#000;"></div><div style="width:1px;height:55px;background:#fff;"></div><div style="width:1px;height:55px;background:#000;"></div><div style="width:2px;height:55px;background:#fff;"></div>';
+    barsHtml += '<div style="width:2px;height:40px;background:#000;"></div><div style="width:1px;height:40px;background:#fff;"></div><div style="width:1px;height:40px;background:#000;"></div><div style="width:2px;height:40px;background:#fff;"></div>';
     for (let i = 0; i < barcode.length; i++) {
       const d = parseInt(barcode[i]) || 0;
-      barsHtml += '<div style="width:' + ((d % 3) + 1) + 'px;height:50px;background:#000;"></div>';
-      barsHtml += '<div style="width:' + ((d % 2) + 1) + 'px;height:50px;background:#fff;"></div>';
-      barsHtml += '<div style="width:' + (((d + 1) % 3) + 1) + 'px;height:50px;background:#000;"></div>';
-      barsHtml += '<div style="width:1px;height:50px;background:#fff;"></div>';
+      barsHtml += '<div style="width:' + ((d % 3) + 1) + 'px;height:38px;background:#000;"></div>';
+      barsHtml += '<div style="width:' + ((d % 2) + 1) + 'px;height:38px;background:#fff;"></div>';
+      barsHtml += '<div style="width:' + (((d + 1) % 3) + 1) + 'px;height:38px;background:#000;"></div>';
+      barsHtml += '<div style="width:1px;height:38px;background:#fff;"></div>';
     }
-    barsHtml += '<div style="width:1px;height:55px;background:#000;"></div><div style="width:2px;height:55px;background:#fff;"></div><div style="width:3px;height:55px;background:#000;"></div>';
+    barsHtml += '<div style="width:1px;height:40px;background:#000;"></div><div style="width:2px;height:40px;background:#fff;"></div><div style="width:2px;height:40px;background:#000;"></div>';
     barsHtml += '</div>';
 
     const variantParts = [color, size].filter(Boolean).join(' / ');
-    const html = '<!DOCTYPE html><html><head><title>Barcode Tag</title><style>' +
-      '* { margin:0; padding:0; box-sizing:border-box; }' +
-      'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; background:#f5f5f5; }' +
-      '.tag { width:280px; background:#fff; border:2px solid #000; border-radius:8px; padding:16px; text-align:center; }' +
-      '.store-name { font-size:10px; font-weight:700; color:#666; letter-spacing:2px; text-transform:uppercase; margin-bottom:8px; }' +
-      '.product-name { font-size:14px; font-weight:700; color:#000; margin-bottom:4px; line-height:1.3; }' +
-      '.variant { font-size:11px; color:#555; margin-bottom:8px; }' +
-      '.price { font-size:22px; font-weight:900; color:#000; margin-bottom:12px; }' +
-      '.barcode-visual { margin-bottom:6px; }' +
-      '.barcode-number { font-family:monospace; font-size:14px; letter-spacing:3px; color:#000; margin-bottom:4px; }' +
-      '@media print { body { background:#fff; } .tag { border:1px solid #ccc; } }' +
-      '</style></head><body><div class="tag">' +
-      '<div class="store-name">Hoard Lavish</div>' +
-      '<div class="product-name">' + name + '</div>' +
-      (variantParts ? '<div class="variant">' + variantParts + '</div>' : '') +
-      '<div class="price">' + CUR + ' ' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</div>' +
-      '<div class="barcode-visual">' + barsHtml + '</div>' +
-      '<div class="barcode-number">' + barcode + '</div>' +
-      '</div><script>window.onload=function(){window.print();}<\/script></body></html>';
-    printWindow.document.write(html);
-    printWindow.document.close();
+    
+    // Create label content optimized for 40x30mm or 50x30mm sticker
+    const labelContent = `
+      <style>
+        @page { 
+          size: 50mm 30mm; 
+          margin: 0; 
+        }
+        * { 
+          margin: 0; 
+          padding: 0; 
+          box-sizing: border-box; 
+        }
+        body { 
+          width: 50mm;
+          height: 30mm;
+          font-family: Arial, sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .label { 
+          width: 100%;
+          height: 100%;
+          padding: 2mm;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          background: #fff;
+        }
+        .product-name { 
+          font-size: 8pt;
+          font-weight: bold;
+          text-align: center;
+          margin-bottom: 1mm;
+          line-height: 1.1;
+          max-height: 16pt;
+          overflow: hidden;
+        }
+        .variant { 
+          font-size: 6pt;
+          text-align: center;
+          margin-bottom: 1mm;
+          color: #333;
+        }
+        .price { 
+          font-size: 11pt;
+          font-weight: bold;
+          margin-bottom: 1mm;
+        }
+        .barcode-visual { 
+          margin-bottom: 1mm;
+          transform: scale(0.8);
+        }
+        .barcode-number { 
+          font-family: monospace;
+          font-size: 7pt;
+          letter-spacing: 1px;
+        }
+      </style>
+      <div class="label">
+        <div class="product-name">${name}</div>
+        ${variantParts ? '<div class="variant">' + variantParts + '</div>' : ''}
+        <div class="price">${CUR} ${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div class="barcode-visual">${barsHtml}</div>
+        <div class="barcode-number">${barcode}</div>
+      </div>
+    `;
+
+    printContainer.innerHTML = labelContent;
+    document.body.appendChild(printContainer);
+
+    // Use silent print if available (Electron), otherwise use window.print
+    setTimeout(() => {
+      if (window.electronAPI?.silentPrint) {
+        window.electronAPI.silentPrint();
+      } else {
+        window.print();
+      }
+      // Remove the container after printing
+      setTimeout(() => {
+        document.body.removeChild(printContainer);
+      }, 1000);
+    }, 100);
   };
 
   // Tab button component
@@ -1186,7 +1264,7 @@ const Inventory: React.FC = () => {
                   </div>
                   {/* Barcode Section */}
                   <div className="col-span-2">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode 1</label>
                     <div className="flex gap-2">
                       <div className="relative flex-1">
                         <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -1212,6 +1290,29 @@ const Inventory: React.FC = () => {
                         className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Printer size={14} /> Print Tag
+                      </button>
+                    </div>
+                  </div>
+                  {/* Barcode 2 Section */}
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode 2 (Optional)</label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                          type="text"
+                          placeholder="Enter alternate barcode..."
+                          className="w-full pl-10 p-2 border border-slate-200 rounded-lg outline-none font-mono"
+                          value={editingProduct.barcode2 || ''}
+                          onChange={e => setEditingProduct({ ...editingProduct, barcode2: e.target.value })}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingProduct({ ...editingProduct, barcode2: generateBarcode() })}
+                        className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                      >
+                        Generate
                       </button>
                     </div>
                   </div>
@@ -1306,7 +1407,7 @@ const Inventory: React.FC = () => {
                         </div>
                         {/* Barcode Section */}
                         <div className="col-span-2">
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode 1</label>
                           <div className="flex gap-2">
                             <div className="relative flex-1">
                               <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -1332,6 +1433,29 @@ const Inventory: React.FC = () => {
                               className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               <Printer size={14} /> Print Tag
+                            </button>
+                          </div>
+                        </div>
+                        {/* Barcode 2 Section */}
+                        <div className="col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode 2 (Optional)</label>
+                          <div className="flex gap-2">
+                            <div className="relative flex-1">
+                              <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                              <input
+                                type="text"
+                                placeholder="Enter alternate barcode..."
+                                className="w-full pl-10 p-2 border border-slate-200 rounded-lg outline-none font-mono"
+                                value={editingProduct.barcode2 || ''}
+                                onChange={e => setEditingProduct({ ...editingProduct, barcode2: e.target.value })}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setEditingProduct({ ...editingProduct, barcode2: generateBarcode() })}
+                              className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                            >
+                              Generate
                             </button>
                           </div>
                         </div>
@@ -1364,88 +1488,133 @@ const Inventory: React.FC = () => {
                         </div>
 
                         {/* Header */}
-                        <div className="grid grid-cols-12 gap-2 text-xs font-bold text-slate-400 uppercase px-1">
-                          <span className="col-span-2">Color</span>
-                          <span className="col-span-2">Size</span>
-                          <span className="col-span-2">SKU</span>
-                          <span className="col-span-2">Cost ({CUR})</span>
-                          <span className="col-span-2">Price ({CUR})</span>
-                          <span className="col-span-1">Qty</span>
-                          <span className="col-span-1"></span>
+                        <div className="grid grid-cols-1 gap-2 text-xs font-bold text-slate-400 uppercase px-1">
+                          <div className="grid grid-cols-12 gap-2">
+                            <span className="col-span-2">Color</span>
+                            <span className="col-span-2">Size</span>
+                            <span className="col-span-2">SKU</span>
+                            <span className="col-span-2">Cost ({CUR})</span>
+                            <span className="col-span-2">Price ({CUR})</span>
+                            <span className="col-span-1">Qty</span>
+                            <span className="col-span-1"></span>
+                          </div>
+                          <div className="grid grid-cols-12 gap-2">
+                            <span className="col-span-6">Barcode 1</span>
+                            <span className="col-span-6">Barcode 2</span>
+                          </div>
                         </div>
 
                         {variations.map((v, idx) => (
-                          <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            {addingColorFor === `var-${idx}` ? (
-                              <div className="col-span-2 flex gap-1">
-                                <input
-                                  type="text"
-                                  placeholder="Color name..."
-                                  className="flex-1 p-1.5 border border-indigo-300 rounded text-xs focus:ring-1 focus:ring-indigo-200 outline-none"
-                                  value={newColorName}
-                                  onChange={e => setNewColorName(e.target.value)}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter' && newColorName.trim()) {
-                                      if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]);
-                                      handleUpdateVariation(idx, 'color', newColorName.trim());
-                                      setNewColorName(''); setAddingColorFor(null);
-                                    }
-                                  }}
-                                  autoFocus
-                                />
-                                <button onClick={() => { if (newColorName.trim()) { if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]); handleUpdateVariation(idx, 'color', newColorName.trim()); setNewColorName(''); setAddingColorFor(null); } }} className="px-2 py-1 bg-slate-900 text-white rounded text-[10px] font-medium">OK</button>
-                                <button onClick={() => { setAddingColorFor(null); setNewColorName(''); }} className="px-2 py-1 text-slate-400 hover:bg-slate-100 rounded text-[10px]">✕</button>
-                              </div>
-                            ) : (
+                          <div key={idx} className="space-y-1">
+                            <div className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                              {addingColorFor === `var-${idx}` ? (
+                                <div className="col-span-2 flex gap-1">
+                                  <input
+                                    type="text"
+                                    placeholder="Color name..."
+                                    className="flex-1 p-1.5 border border-indigo-300 rounded text-xs focus:ring-1 focus:ring-indigo-200 outline-none"
+                                    value={newColorName}
+                                    onChange={e => setNewColorName(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter' && newColorName.trim()) {
+                                        if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]);
+                                        handleUpdateVariation(idx, 'color', newColorName.trim());
+                                        setNewColorName(''); setAddingColorFor(null);
+                                      }
+                                    }}
+                                    autoFocus
+                                  />
+                                  <button onClick={() => { if (newColorName.trim()) { if (!customColors.includes(newColorName.trim())) setCustomColors(prev => [...prev, newColorName.trim()]); handleUpdateVariation(idx, 'color', newColorName.trim()); setNewColorName(''); setAddingColorFor(null); } }} className="px-2 py-1 bg-slate-900 text-white rounded text-[10px] font-medium">OK</button>
+                                  <button onClick={() => { setAddingColorFor(null); setNewColorName(''); }} className="px-2 py-1 text-slate-400 hover:bg-slate-100 rounded text-[10px]">✕</button>
+                                </div>
+                              ) : (
+                                <select
+                                  className="col-span-2 p-1.5 border border-slate-200 rounded text-xs bg-white"
+                                  value={v.color}
+                                  onChange={e => { if (e.target.value === '__NEW__') { setAddingColorFor(`var-${idx}`); setNewColorName(''); } else { handleUpdateVariation(idx, 'color', e.target.value); } }}
+                                >
+                                  {allColors.map(c => <option key={c} value={c}>{c}</option>)}
+                                  <option value="__NEW__">+ New Color...</option>
+                                </select>
+                              )}
                               <select
                                 className="col-span-2 p-1.5 border border-slate-200 rounded text-xs bg-white"
-                                value={v.color}
-                                onChange={e => { if (e.target.value === '__NEW__') { setAddingColorFor(`var-${idx}`); setNewColorName(''); } else { handleUpdateVariation(idx, 'color', e.target.value); } }}
+                                value={v.size}
+                                onChange={e => handleUpdateVariation(idx, 'size', e.target.value)}
                               >
-                                {allColors.map(c => <option key={c} value={c}>{c}</option>)}
-                                <option value="__NEW__">+ New Color...</option>
+                                {AVAILABLE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
-                            )}
-                            <select
-                              className="col-span-2 p-1.5 border border-slate-200 rounded text-xs bg-white"
-                              value={v.size}
-                              onChange={e => handleUpdateVariation(idx, 'size', e.target.value)}
-                            >
-                              {AVAILABLE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                            <input
-                              type="text"
-                              placeholder="SKU"
-                              className="col-span-2 p-1.5 border border-slate-200 rounded text-xs font-mono"
-                              value={v.sku}
-                              onChange={e => handleUpdateVariation(idx, 'sku', e.target.value)}
-                            />
-                            <input
-                              type="number"
-                              className="col-span-2 p-1.5 border border-slate-200 rounded text-xs"
-                              value={v.costPrice}
-                              onChange={e => handleUpdateVariation(idx, 'costPrice', Number(e.target.value))}
-                            />
-                            <input
-                              type="number"
-                              className="col-span-2 p-1.5 border border-slate-200 rounded text-xs"
-                              value={v.price}
-                              onChange={e => handleUpdateVariation(idx, 'price', Number(e.target.value))}
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              className="col-span-1 p-1.5 border border-slate-200 rounded text-xs"
-                              value={v.quantity}
-                              onChange={e => handleUpdateVariation(idx, 'quantity', Number(e.target.value))}
-                            />
-                            <div className="col-span-1 flex justify-center">
-                              <button
-                                onClick={() => handleRemoveVariation(idx)}
-                                className="p-1 text-red-400 hover:text-red-600 rounded"
-                              >
-                                <X size={14} />
-                              </button>
+                              <input
+                                type="text"
+                                placeholder="SKU"
+                                className="col-span-2 p-1.5 border border-slate-200 rounded text-xs font-mono"
+                                value={v.sku}
+                                onChange={e => handleUpdateVariation(idx, 'sku', e.target.value)}
+                              />
+                              <input
+                                type="number"
+                                className="col-span-2 p-1.5 border border-slate-200 rounded text-xs"
+                                value={v.costPrice}
+                                onChange={e => handleUpdateVariation(idx, 'costPrice', Number(e.target.value))}
+                              />
+                              <input
+                                type="number"
+                                className="col-span-2 p-1.5 border border-slate-200 rounded text-xs"
+                                value={v.price}
+                                onChange={e => handleUpdateVariation(idx, 'price', Number(e.target.value))}
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                className="col-span-1 p-1.5 border border-slate-200 rounded text-xs"
+                                value={v.quantity}
+                                onChange={e => handleUpdateVariation(idx, 'quantity', Number(e.target.value))}
+                              />
+                              <div className="col-span-1 flex justify-center">
+                                <button
+                                  onClick={() => handleRemoveVariation(idx)}
+                                  className="p-1 text-red-400 hover:text-red-600 rounded"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            </div>
+                            {/* Barcode Row */}
+                            <div className="grid grid-cols-12 gap-2 px-2 pb-1">
+                              <div className="col-span-6 flex gap-1">
+                                <input
+                                  type="text"
+                                  placeholder="Barcode 1..."
+                                  className="flex-1 p-1.5 border border-slate-200 rounded text-xs font-mono"
+                                  value={v.barcode || ''}
+                                  onChange={e => handleUpdateVariation(idx, 'barcode', e.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateVariation(idx, 'barcode', generateBarcode())}
+                                  className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-[10px] font-medium hover:bg-indigo-100"
+                                  title="Generate Barcode 1"
+                                >
+                                  Gen
+                                </button>
+                              </div>
+                              <div className="col-span-6 flex gap-1">
+                                <input
+                                  type="text"
+                                  placeholder="Barcode 2 (optional)..."
+                                  className="flex-1 p-1.5 border border-slate-200 rounded text-xs font-mono"
+                                  value={v.barcode2 || ''}
+                                  onChange={e => handleUpdateVariation(idx, 'barcode2', e.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateVariation(idx, 'barcode2', generateBarcode())}
+                                  className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-[10px] font-medium hover:bg-indigo-100"
+                                  title="Generate Barcode 2"
+                                >
+                                  Gen
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}

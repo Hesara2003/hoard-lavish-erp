@@ -35,7 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeAllListeners('update-error');
     },
 
-    // Future: add printing, file dialogs, etc.
-    // printInvoice: (data) => ipcRenderer.invoke('print-invoice', data),
-    // openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+    // Printing
+    silentPrint: () => {
+        ipcRenderer.send('silent-print');
+    },
 });

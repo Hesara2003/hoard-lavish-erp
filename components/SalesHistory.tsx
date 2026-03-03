@@ -1,7 +1,9 @@
 ﻿import React, { useState, useRef, useMemo } from 'react';
-import { Search, Printer, User, Calendar, DollarSign, X, Building2, ArrowLeftRight } from 'lucide-react';
+import { Search, Printer, User, Calendar, DollarSign, X, Building2, ArrowLeftRight, Package, FileText } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { SalesRecord, ExchangeRecord } from '../types';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -51,6 +53,10 @@ const SalesHistory: React.FC = () => {
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  // Item stats independent filter
+  const [itemTimePeriod, setItemTimePeriod] = useState<TimePeriod>('ALL');
+  const [itemDateFrom, setItemDateFrom] = useState<string>('');
+  const [itemDateTo, setItemDateTo] = useState<string>('');
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   // --- Combined filtered list ---
@@ -80,6 +86,172 @@ const SalesHistory: React.FC = () => {
       (a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
     );
   }, [salesHistory, exchangeHistory, searchTerm, timePeriod, branchFilter, dateFrom, dateTo]);
+
+  // --- Item-wise filtered list (independent from main list) ---
+  const itemFilteredItems = useMemo((): ListItem[] => {
+    const sales: ListItem[] = salesHistory
+      .filter(s => isInPeriod(s.date, itemTimePeriod, itemDateFrom, itemDateTo))
+      .map(s => ({ recordType: 'sale', data: s }));
+
+    const exchanges: ListItem[] = (exchangeHistory || [])
+      .filter(e => isInPeriod(e.date, itemTimePeriod, itemDateFrom, itemDateTo))
+      .map(e => ({ recordType: 'exchange', data: e }));
+
+    return [...sales, ...exchanges];
+  }, [salesHistory, exchangeHistory, itemTimePeriod, itemDateFrom, itemDateTo]);
+
+  // --- Item-wise sold quantities ---
+  const itemStats = useMemo(() => {
+    const stats = new Map<string, { name: string; quantity: number; revenue: number; sku: string }>();
+    
+    itemFilteredItems.forEach(item => {
+      if (item.recordType === 'sale') {
+        const sale = item.data as SalesRecord;
+        sale.items.forEach(cartItem => {
+          const existing = stats.get(cartItem.id) || { 
+            name: cartItem.name, 
+            quantity: 0, 
+            revenue: 0, 
+            sku: cartItem.sku 
+          };
+          stats.set(cartItem.id, {
+            ...existing,
+            quantity: existing.quantity + cartItem.quantity,
+            revenue: existing.revenue + (cartItem.price * cartItem.quantity)
+          });
+        });
+      } else {
+        const exchange = item.data as ExchangeRecord;
+        exchange.newItems?.forEach(cartItem => {
+          const existing = stats.get(cartItem.id) || { 
+            name: cartItem.name, 
+            quantity: 0, 
+            revenue: 0, 
+            sku: cartItem.sku 
+          };
+          stats.set(cartItem.id, {
+            ...existing,
+            quantity: existing.quantity + cartItem.quantity,
+            revenue: existing.revenue + (cartItem.price * cartItem.quantity)
+          });
+        });
+      }
+    });
+    
+    return Array.from(stats.entries())
+      .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => b.quantity - a.quantity);
+  }, [itemFilteredItems]);
+
+  // --- Generate Item Stats Report ---
+  const generateItemStatsReport = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Header
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('HOARD LAVISH', pageWidth / 2, 18, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Item-Wise Sales Report', pageWidth / 2, 28, { align: 'center' });
+    
+    const periodLabel = itemTimePeriod === 'TODAY' ? 'Today' : 
+                        itemTimePeriod === 'WEEK' ? 'This Week' : 
+                        itemTimePeriod === 'MONTH' ? 'This Month' : 
+                        itemTimePeriod === 'CUSTOM' ? `${itemDateFrom || 'Start'} to ${itemDateTo || 'End'}` : 
+                        'All Time';
+    doc.text(`Period: ${periodLabel}`, pageWidth / 2, 35, { align: 'center' });
+    
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - 14, 50, { align: 'right' });
+    
+    // Summary Stats
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Summary', 14, 58);
+    
+    doc.setDrawColor(200, 200, 200);
+    doc.line(14, 61, pageWidth - 14, 61);
+    
+    const totalQuantity = itemStats.reduce((sum, item) => sum + item.quantity, 0);
+    const totalRevenue = itemStats.reduce((sum, item) => sum + item.revenue, 0);
+    
+    autoTable(doc, {
+      startY: 65,
+      head: [],
+      body: [
+        ['Total Products Sold', totalQuantity.toString() + ' units'],
+        ['Total Revenue', fmtCurrency(totalRevenue)],
+        ['Unique Products', itemStats.length.toString()]
+      ],
+      theme: 'plain',
+      styles: { fontSize: 11, cellPadding: 3 },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 60 },
+        1: { halign: 'right' }
+      },
+      margin: { left: 14, right: 14 }
+    });
+    
+    // Item Table
+    if (itemStats.length > 0) {
+      const afterSummaryY = (doc as any).lastAutoTable.finalY + 10;
+      
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Products', 14, afterSummaryY);
+      doc.line(14, afterSummaryY + 3, pageWidth - 14, afterSummaryY + 3);
+      
+      const tableData = itemStats.map(item => [
+        item.sku || 'N/A',
+        item.name,
+        item.quantity.toString(),
+        fmtCurrency(item.revenue)
+      ]);
+      
+      autoTable(doc, {
+        startY: afterSummaryY + 7,
+        head: [['SKU', 'Product Name', 'Qty Sold', 'Revenue']],
+        body: tableData,
+        theme: 'striped',
+        styles: { fontSize: 9, cellPadding: 2 },
+        headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 25 },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 25, halign: 'center' },
+          3: { cellWidth: 35, halign: 'right' }
+        },
+        margin: { left: 14, right: 14 }
+      });
+    }
+    
+    // Footer
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(
+        `Page ${i} of ${pageCount} — Hoard Lavish ERP`,
+        pageWidth / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'center' }
+      );
+    }
+    
+    // Save
+    doc.save(`item-sales-report-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
   // --- Print invoice ---
   const handlePrint = () => {
@@ -130,7 +302,7 @@ const SalesHistory: React.FC = () => {
   return (
     <div className="flex h-full bg-slate-50 overflow-hidden">
       {/* List Section */}
-      <div className={`${selectedItem ? 'w-1/2' : 'w-full'} flex flex-col transition-all duration-300 border-r border-slate-200`}>
+      <div className={`${selectedItem ? 'w-5/12' : 'w-2/3'} flex flex-col transition-all duration-300 border-r border-slate-200`}>
         <div className="p-6 bg-white border-b border-slate-200">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold text-slate-900">Sales History</h2>
@@ -316,9 +488,110 @@ const SalesHistory: React.FC = () => {
         </div>
       </div>
 
+      {/* Item-Wise Summary Section */}
+      <div className={`${selectedItem ? 'w-3/12' : 'w-1/3'} flex flex-col bg-white border-r border-slate-200`}>
+        <div className="p-4 bg-slate-50 border-b border-slate-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Package size={20} className="text-slate-600" />
+              <h3 className="font-bold text-slate-900">Items Sold</h3>
+            </div>
+            <button
+              onClick={generateItemStatsReport}
+              className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
+              title="Generate Report"
+            >
+              <FileText size={16} />
+            </button>
+          </div>
+          
+          {/* Item Filter Controls */}
+          <div className="space-y-2">
+            <select
+              value={itemTimePeriod}
+              onChange={(e) => setItemTimePeriod(e.target.value as TimePeriod)}
+              className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md focus:border-slate-400 focus:outline-none bg-white"
+            >
+              <option value="TODAY">Today</option>
+              <option value="WEEK">This Week</option>
+              <option value="MONTH">This Month</option>
+              <option value="ALL">All Time</option>
+              <option value="CUSTOM">Custom Range</option>
+            </select>
+            
+            {itemTimePeriod === 'CUSTOM' && (
+              <div className="space-y-1.5">
+                <input
+                  type="date"
+                  value={itemDateFrom}
+                  onChange={(e) => setItemDateFrom(e.target.value)}
+                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md focus:border-slate-400 focus:outline-none"
+                  placeholder="From"
+                />
+                <input
+                  type="date"
+                  value={itemDateTo}
+                  onChange={(e) => setItemDateTo(e.target.value)}
+                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md focus:border-slate-400 focus:outline-none"
+                  placeholder="To"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4">
+          {itemStats.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">
+              <Package size={32} className="mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No items sold yet</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {itemStats.map(item => (
+                <div key={item.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div className="flex justify-between items-start mb-1">
+                    <h4 className="font-medium text-slate-900 text-sm line-clamp-2 flex-1">{item.name}</h4>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Qty: <span className="font-bold text-slate-900">{item.quantity}</span></span>
+                    <span className="text-emerald-600 font-bold">{fmtCurrency(item.revenue)}</span>
+                  </div>
+                  {item.sku && (
+                    <div className="mt-1">
+                      <span className="text-xs text-slate-400">SKU: {item.sku}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        {/* Summary Footer */}
+        {itemStats.length > 0 && (
+          <div className="p-4 bg-slate-50 border-t border-slate-200">
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Items:</span>
+                <span className="font-bold text-slate-900">{itemStats.reduce((sum, item) => sum + item.quantity, 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Revenue:</span>
+                <span className="font-bold text-emerald-600">{fmtCurrency(itemStats.reduce((sum, item) => sum + item.revenue, 0))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Unique Products:</span>
+                <span className="font-bold text-slate-900">{itemStats.length}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Detail Section */}
       {selectedItem && (
-        <div className="w-1/2 bg-white flex flex-col h-full animate-in slide-in-from-right duration-300">
+        <div className="w-4/12 bg-white flex flex-col h-full animate-in slide-in-from-right duration-300">
           <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <div>
               <h3 className="font-bold text-lg text-slate-800">
@@ -400,7 +673,14 @@ const SalesHistory: React.FC = () => {
                   <tbody>
                     {selectedExchange.returnedItems.map((item, idx) => (
                       <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '8px 12px', fontSize: 13 }}>{item.name}</td>
+                        <td style={{ padding: '8px 12px', fontSize: 13 }}>
+                          {item.name}
+                          {(item.size || item.color) && (
+                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                              {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{item.quantity}</td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{fmtCurrency(item.price)}</td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#ef4444', fontWeight: 500 }}>-{fmtCurrency(item.price * item.quantity)}</td>
@@ -427,7 +707,14 @@ const SalesHistory: React.FC = () => {
                   <tbody>
                     {selectedExchange.newItems.map((item, idx) => (
                       <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '8px 12px', fontSize: 13 }}>{item.name}</td>
+                        <td style={{ padding: '8px 12px', fontSize: 13 }}>
+                          {item.name}
+                          {(item.size || item.color) && (
+                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                              {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{item.quantity}</td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{fmtCurrency(item.price)}</td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#16a34a', fontWeight: 500 }}>{fmtCurrency(item.price * item.quantity)}</td>
@@ -508,7 +795,14 @@ const SalesHistory: React.FC = () => {
                   <tbody>
                     {selectedSale.items.map((item, idx) => (
                       <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '8px 12px', fontSize: 13 }}>{item.name}</td>
+                        <td style={{ padding: '8px 12px', fontSize: 13 }}>
+                          {item.name}
+                          {(item.size || item.color) && (
+                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                              {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{item.quantity}</td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{fmtCurrency(item.price)}</td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', fontWeight: 500 }}>{fmtCurrency(item.price * item.quantity)}</td>

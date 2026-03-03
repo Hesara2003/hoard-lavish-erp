@@ -60,33 +60,41 @@ export const INITIAL_SUPPLIERS: Supplier[] = [
   }
 ];
 
+const getTodayDateString = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}T00:00:00.000Z`;
+};
+
 export const INITIAL_EXPENSES: Expense[] = [
   {
     id: 'e1',
     description: 'Monthly Store Rent',
     amount: 4500,
     category: 'Rent',
-    date: new Date().toISOString(),
+    date: getTodayDateString(),
     branchId: 'b1',
-    branchName: 'Main HQ Store'
+    branchName: 'Main HQ Store',
+    paymentMethod: 'Online Transfer'
   },
   {
     id: 'e2',
     description: 'Electricity Bill',
     amount: 320,
     category: 'Utilities',
-    date: new Date().toISOString(),
+    date: getTodayDateString(),
     branchId: 'b1',
-    branchName: 'Main HQ Store'
+    branchName: 'Main HQ Store',
+    paymentMethod: 'Cash'
   },
   {
     id: 'e3',
     description: 'Instagram Ad Campaign',
     amount: 500,
     category: 'Marketing',
-    date: new Date().toISOString(),
+    date: getTodayDateString(),
     branchId: 'b2',
-    branchName: 'Downtown Boutique'
+    branchName: 'Downtown Boutique',
+    paymentMethod: 'Card'
   }
 ];
 
@@ -102,7 +110,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 8, 'b2': 4 },
     minStockLevel: 5,
     sku: 'DRS-001',
-    description: 'A luxurious velvet gown in deep midnight blue, perfect for evening galas.'
+    description: 'A luxurious velvet gown in deep midnight blue, perfect for evening galas.',
+    color: 'Navy',
+    size: 'M'
   },
   {
     id: '2',
@@ -115,7 +125,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 15, 'b2': 10 },
     minStockLevel: 10,
     sku: 'SHO-002',
-    description: 'Handcrafted Italian leather loafers with a classic finish.'
+    description: 'Handcrafted Italian leather loafers with a classic finish.',
+    color: 'Black',
+    size: '42'
   },
   {
     id: '3',
@@ -128,7 +140,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 30, 'b2': 20 },
     minStockLevel: 15,
     sku: 'ACC-003',
-    description: '100% pure silk scarf with intricate floral patterns.'
+    description: '100% pure silk scarf with intricate floral patterns.',
+    color: 'Red'
   },
   {
     id: '4',
@@ -141,7 +154,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 2, 'b2': 1 },
     minStockLevel: 5,
     sku: 'COT-004',
-    description: 'Beige cashmere blend trench coat, suitable for all seasons.'
+    description: 'Beige cashmere blend trench coat, suitable for all seasons.',
+    color: 'Beige',
+    size: 'L'
   },
   {
     id: '5',
@@ -154,7 +169,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 20, 'b2': 10 },
     minStockLevel: 8,
     sku: 'ACC-005',
-    description: 'Minimalist gold plated cufflinks for formal attire.'
+    description: 'Minimalist gold plated cufflinks for formal attire.',
+    color: 'Gold'
   },
   {
     id: '6',
@@ -167,7 +183,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     branchStock: { 'b1': 10, 'b2': 5 },
     minStockLevel: 5,
     sku: 'BAG-006',
-    description: 'Durable structured tote with ample space for daily essentials.'
+    description: 'Durable structured tote with ample space for daily essentials.',
+    color: 'Black'
   },
 ];
 

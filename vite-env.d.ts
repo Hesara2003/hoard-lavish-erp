@@ -10,6 +10,7 @@ export interface ElectronAPI {
   installUpdate: () => void;
   checkForUpdates: () => void;
   removeUpdateListeners: () => void;
+  silentPrint: () => void;
 }
 
 declare global {

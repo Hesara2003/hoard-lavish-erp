@@ -49,7 +49,8 @@ const Accounting: React.FC = () => {
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
     date: new Date().toISOString().split('T')[0],
     branchId: currentBranch.id,
-    category: EXPENSE_CATEGORIES[0]
+    category: EXPENSE_CATEGORIES[0],
+    paymentMethod: 'Cash'
   });
 
   // --- Calculations ---
@@ -164,7 +165,8 @@ const Accounting: React.FC = () => {
         branchId: currentBranch.id,
         category: EXPENSE_CATEGORIES[0],
         description: '',
-        amount: 0
+        amount: 0,
+        paymentMethod: 'Cash'
       });
     }
   };
@@ -492,6 +494,22 @@ const Accounting: React.FC = () => {
                    </select>
                 </div>
                 <div>
+                   <label className="block text-sm font-medium text-slate-700 mb-1">Payment Method</label>
+                   <select 
+                      className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
+                      value={newExpense.paymentMethod || 'Cash'}
+                      onChange={e => setNewExpense({...newExpense, paymentMethod: e.target.value as any})}
+                   >
+                     <option value="Cash">💵 Cash</option>
+                     <option value="Card">💳 Card</option>
+                     <option value="PayHere">📱 PayHere</option>
+                     <option value="Online Transfer">🌐 Online Transfer</option>
+                     <option value="MintPay">💰 MintPay</option>
+                   </select>
+                </div>
+              </div>
+              
+              <div>
                    <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
                    <select 
                       className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
@@ -501,7 +519,6 @@ const Accounting: React.FC = () => {
                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                    </select>
                 </div>
-              </div>
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
