@@ -35,7 +35,7 @@ const AlertPopup: React.FC<{ message: string; type?: 'error' | 'warning'; onClos
 );
 
 const POS: React.FC = () => {
-  const { products, customers, cart, salesHistory, addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch } = useStore();
+  const { products, customers, cart, salesHistory, addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch, currentUser } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -135,7 +135,7 @@ const POS: React.FC = () => {
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Try exact SKU or barcode match first (for real barcode scanners)
-    const exact = products.find(p => 
+    const exact = products.find(p =>
       p.sku.toLowerCase() === barcodeInput.toLowerCase() ||
       (p.barcode && p.barcode.toLowerCase() === barcodeInput.toLowerCase()) ||
       (p.barcode2 && p.barcode2.toLowerCase() === barcodeInput.toLowerCase())
@@ -247,17 +247,165 @@ const POS: React.FC = () => {
   };
 
   const handlePrint = () => {
-    // Use silent printing in Electron, fallback to window.print in browser
-    if (window.electronAPI?.silentPrint) {
-      window.electronAPI.silentPrint();
-    } else {
-      window.print();
+    if (!lastSale) return;
+    const printWindow = window.open('', '_blank', 'width=400,height=700');
+    if (!printWindow) return;
+
+    const sale = lastSale;
+    const fmtRs = (n: number) => `Rs. ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const discountPercent = sale.subtotal > 0 ? ((sale.discount / sale.subtotal) * 100).toFixed(2) : '0.00';
+    const totalSavings = sale.items.reduce((s, i) => s + (i.discount || 0) * i.quantity, 0) + sale.discount;
+    const logoUrl = window.location.origin + '/logo.png';
+
+    // Meta line date: "27/02/2026 4:17 PM"
+    const sd = new Date(sale.date);
+    const metaDate = `${String(sd.getDate()).padStart(2, '0')}/${String(sd.getMonth() + 1).padStart(2, '0')}/${sd.getFullYear()} ${sd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+
+    // Footer date: "2026.February.27 AD 04:17 PM"
+    const now = new Date();
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const footerDate = `${now.getFullYear()}.${MONTHS[now.getMonth()]}.${String(now.getDate()).padStart(2, '0')} AD ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+
+    // Barcode
+    const barcodeStr = sale.invoiceNumber.replace(/\D/g, '').slice(-4).padStart(4, '0');
+    let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:0;">';
+    barsHtml += '<div style="width:3px;height:50px;background:#000;"></div><div style="width:1px;height:50px;background:#fff;"></div><div style="width:2px;height:50px;background:#000;"></div><div style="width:1px;height:50px;background:#fff;"></div>';
+    for (let bi = 0; bi < 32; bi++) {
+      const d = parseInt(barcodeStr[bi % barcodeStr.length]) || (bi % 5);
+      barsHtml += `<div style="width:${(d % 3) + 1}px;height:${bi % 3 === 0 ? 50 : 48}px;background:#000;"></div>`;
+      barsHtml += `<div style="width:${(d % 2) + 1}px;height:${bi % 3 === 0 ? 50 : 48}px;background:#fff;"></div>`;
     }
-    // Close invoice after printing
-    setTimeout(() => setIsInvoiceOpen(false), 500);
+    barsHtml += '<div style="width:2px;height:50px;background:#000;"></div><div style="width:1px;height:50px;background:#fff;"></div><div style="width:3px;height:50px;background:#000;"></div></div>';
+
+    // Item rows - bold item name, variant below, then qty/price columns
+    const itemsHtml = sale.items.map(item => {
+      const discountedTotal = (item.price - (item.discount || 0)) * item.quantity;
+      const variantLine = [item.size, item.color].filter(Boolean).join(' / ');
+      return `<tr>
+        <td style="padding:7px 0;font-size:13px;border-bottom:1px dotted #bbb;vertical-align:top;line-height:1.4;"><strong>${item.name}</strong>${variantLine ? `<br><span style="font-size:11px;color:#555;">${variantLine}</span>` : ''}</td>
+        <td style="padding:7px 3px;text-align:center;font-size:13px;border-bottom:1px dotted #bbb;vertical-align:top;">${item.quantity}</td>
+        <td style="padding:7px 3px;text-align:right;font-size:13px;border-bottom:1px dotted #bbb;vertical-align:top;">${item.price.toFixed(2)}</td>
+        <td style="padding:7px 0;text-align:right;font-size:13px;border-bottom:1px dotted #bbb;vertical-align:top;">${discountedTotal.toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html><head>
+<title>Receipt ${sale.invoiceNumber}</title>
+<meta charset="utf-8"/>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:Arial,Helvetica,sans-serif; width:80mm; max-width:80mm; margin:0 auto; padding:3mm 4mm 10mm; background:#fff; color:#000; font-size:13px; }
+.meta { display:flex; justify-content:space-between; font-size:10px; color:#555; margin-bottom:4px; }
+.logo-wrap { text-align:center; margin:2px 0 4px; }
+.logo-wrap img { width:52mm; max-width:100%; height:auto; display:block; margin:0 auto; }
+.store-info { text-align:center; font-size:11.5px; line-height:1.6; margin-bottom:8px; }
+.cashier { font-size:13px; margin-bottom:4px; }
+table.items { width:100%; border-collapse:collapse; }
+table.items thead th { font-size:12px; font-weight:700; padding:5px 0; border-top:2px solid #000; border-bottom:2px solid #000; }
+.th-item { text-align:left; width:43%; }
+.th-qty { text-align:center; width:9%; }
+.th-price { text-align:right; width:24%; }
+.th-total { text-align:right; width:24%; }
+table.totals { width:100%; border-collapse:collapse; }
+table.totals td { font-size:13px; padding:3px 0; }
+table.totals .lbl { text-align:right; padding-right:8px; }
+table.totals .val { text-align:right; white-space:nowrap; }
+.grand td { font-size:15px; font-weight:900; padding:5px 0; }
+.divider { border-top:2px solid #000; margin:5px 0; }
+.divider-dot { border-top:1px dotted #999; margin:5px 0; }
+.tender { font-size:13px; padding:2px 0; }
+.disc-total { text-align:center; font-weight:700; font-size:14px; padding:5px 0; }
+.footer-note { text-align:center; font-size:11px; color:#111; line-height:1.6; margin:5px 0; }
+.footer-box { background:#1c1c1c; color:#fff; text-align:center; font-size:15px; font-weight:700; padding:8px 4px; margin:8px 0 5px; }
+.barcode-wrap { text-align:center; margin-top:6px; }
+.barcode-num { font-size:12px; letter-spacing:3px; margin-top:4px; font-family:'Courier New',monospace; }
+.credit { text-align:center; font-size:10px; color:#444; margin-top:7px; line-height:1.6; }
+@media print { body { margin:0; padding:2mm 3mm 8mm; } @page { size:80mm auto; margin:0; } }
+</style>
+</head><body>
+
+<div class="meta">
+  <span>${metaDate}</span>
+  <span>Sales Receipt ${sale.invoiceNumber}</span>
+</div>
+
+<div class="logo-wrap"><img src="${logoUrl}" alt="Hoard Lavish"/></div>
+
+<div class="store-info">
+  Veediya bandara road, Ethulkotte<br>
+  Tel : 074 177 4321<br>
+  Web : www.hoardlavish.com
+</div>
+
+<div class="cashier">Cashier : ${currentUser?.name || 'Admin'}</div>
+
+<table class="items">
+  <thead>
+    <tr>
+      <th class="th-item">Item</th>
+      <th class="th-qty">Qty</th>
+      <th class="th-price">Org Price<br>Rs.</th>
+      <th class="th-total">Total<br>Rs.</th>
+    </tr>
+  </thead>
+  <tbody>${itemsHtml}</tbody>
+</table>
+
+<div class="divider"></div>
+
+<table class="totals">
+  <tr><td class="lbl">Sub Total</td><td class="val">${fmtRs(sale.subtotal)}</td></tr>
+  <tr><td class="lbl">${discountPercent} % Disc</td><td class="val">${fmtRs(sale.discount)}</td></tr>
+</table>
+
+<div class="divider"></div>
+
+<table class="totals">
+  <tr class="grand"><td class="lbl">RECEIPT TOTAL</td><td class="val">${fmtRs(sale.totalAmount)}</td></tr>
+</table>
+
+<div class="divider"></div>
+
+<div class="tender">Amount Tendered: ${fmtRs(sale.totalAmount)}</div>
+<div class="tender">Change Given: Rs.0.00</div>
+<div class="tender">Cash: Rs.0.00</div>
+
+<div class="divider-dot"></div>
+
+<div class="disc-total">Total Sales Discounts: ${fmtRs(totalSavings)}</div>
+
+<div class="divider-dot"></div>
+
+<div class="footer-note">
+  For any exchange please produce the bill the<br>
+  garment within orginal tagintact within 07days<br>
+  NO EXCHANGE OR RETURN ACCEPETED FOR<br>
+  ITEM SOLD IN OFFERS AND SALE
+</div>
+
+<div class="footer-box">*** Thank You, Come Again***</div>
+
+<div class="barcode-wrap">
+  ${barsHtml}
+  <div class="barcode-num">${barcodeStr}</div>
+</div>
+
+<div class="credit">
+  ware By Snow Soft(pvt)Ltd .(0114341530)<br>
+  ${footerDate}
+</div>
+
+<script>window.onload=function(){window.print();};<\/script>
+</body></html>`;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => setIsInvoiceOpen(false), 800);
   };
 
   // === Exchange Helpers ===
+
   const filteredExchangeSales = useMemo(() => {
     if (!exchangeSaleSearch.trim()) return salesHistory.slice(0, 10);
     const term = exchangeSaleSearch.toLowerCase();
@@ -639,7 +787,7 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                     </div>
                     <p className="text-slate-900 font-bold text-sm ml-2">{fmtCurrency(item.price * item.quantity - (item.discount || 0) * item.quantity)}</p>
                   </div>
-                  
+
                   {/* Product Discount */}
                   <div className="flex items-center gap-2 mt-2">
                     <label className="text-xs text-slate-500 font-medium">Discount/unit:</label>
@@ -658,7 +806,7 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="flex items-center justify-between mt-2">
                     {/* 5. Clear controls: - to reduce, + to add, trash to remove entirely */}
                     <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
@@ -699,7 +847,7 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
               <span>Subtotal</span>
               <span>{fmtCurrency(subtotal)}</span>
             </div>
-            
+
             {/* Item discounts */}
             {itemDiscountsTotal > 0 && (
               <div className="flex justify-between text-emerald-600 text-sm">
@@ -707,7 +855,7 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                 <span>-{fmtCurrency(itemDiscountsTotal)}</span>
               </div>
             )}
-            
+
             {/* 7. Additional Discount with profit validation */}
             <div className="flex justify-between items-center text-slate-500 text-sm">
               <span>Additional Discount</span>
@@ -722,7 +870,7 @@ ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;backgroun
                 />
               </div>
             </div>
-            
+
             {/* Total discounts */}
             {totalDiscount > 0 && (
               <div className="flex justify-between text-slate-700 text-sm font-medium">
