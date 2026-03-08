@@ -138,6 +138,7 @@ ipcMain.handle('get-printers', async () => {
 });
 
 ipcMain.handle('print-receipt', async (_event, html, printerName, options) => {
+    const os = require('os');
     return new Promise((resolve) => {
         // Create a hidden off-screen window to render & print the receipt
         const printWin = new BrowserWindow({
@@ -150,21 +151,27 @@ ipcMain.handle('print-receipt', async (_event, html, printerName, options) => {
             },
         });
 
-        printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+        // Write HTML to a temp file instead of using data: URL.
+        // data: URLs cause Chromium to show "about:blank" in header/footer.
+        const tmpHtmlPath = path.join(os.tmpdir(), `hl_print_${Date.now()}.html`);
+        fs.writeFileSync(tmpHtmlPath, html, 'utf-8');
+        printWin.loadFile(tmpHtmlPath);
 
         printWin.webContents.once('did-finish-load', () => {
             const printOptions = {
                 silent: true,
                 printBackground: true,
                 color: false,
-                margins: { marginType: 'none' },
-                header: '',
-                footer: '',
+                // Use explicit zero custom margins to prevent any header/footer space
+                margins: { marginType: 'custom', top: 0, bottom: 0, left: 0, right: 0 },
+                // Single-space strings suppress default date/URL header/footer text
+                header: ' ',
+                footer: ' ',
             };
 
             // Set a fixed pageSize when dimensions are explicitly supplied.
             // Receipts: pageWidthMm=80 with tall height.
-            // Barcode labels: pageWidthMm=40, pageHeightMm=30 (or whatever the label dimensions are).
+            // Barcode labels: pageWidthMm=80, pageHeightMm=25 (full roll width × sticker height).
             if (options && options.pageWidthMm) {
                 printOptions.pageSize = {
                     width: Math.round(options.pageWidthMm * 1000),
@@ -179,6 +186,8 @@ ipcMain.handle('print-receipt', async (_event, html, printerName, options) => {
 
             printWin.webContents.print(printOptions, (success, errorType) => {
                 printWin.destroy();
+                // Clean up temp file
+                try { fs.unlinkSync(tmpHtmlPath); } catch (e) { /* ignore */ }
                 resolve({ success, errorType: errorType || null });
             });
         });
@@ -187,6 +196,7 @@ ipcMain.handle('print-receipt', async (_event, html, printerName, options) => {
         setTimeout(() => {
             if (!printWin.isDestroyed()) {
                 printWin.destroy();
+                try { fs.unlinkSync(tmpHtmlPath); } catch (e) { /* ignore */ }
                 resolve({ success: false, errorType: 'timeout' });
             }
         }, 15000);
