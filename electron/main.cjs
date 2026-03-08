@@ -160,13 +160,13 @@ ipcMain.handle('print-receipt', async (_event, html, printerName, options) => {
                 margins: { marginType: 'none' },
             };
 
-            // Only set a fixed pageSize when a width is explicitly supplied (receipts = 80mm).
-            // For barcode labels, omit pageSize so the printer driver uses its own configured
-            // paper size (i.e. whatever label is loaded in the XP-T451B).
+            // Set a fixed pageSize when dimensions are explicitly supplied.
+            // Receipts: pageWidthMm=80 with tall height.
+            // Barcode labels: pageWidthMm=40, pageHeightMm=30 (or whatever the label dimensions are).
             if (options && options.pageWidthMm) {
                 printOptions.pageSize = {
                     width: Math.round(options.pageWidthMm * 1000),
-                    height: 2970000, // tall enough for any receipt
+                    height: options.pageHeightMm ? Math.round(options.pageHeightMm * 1000) : 2970000,
                 };
             }
 
