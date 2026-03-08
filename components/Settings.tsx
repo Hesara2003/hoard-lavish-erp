@@ -58,6 +58,7 @@ const Settings: React.FC = () => {
     taxRate: settings.taxRate * 100,
     enableLowStockAlerts: settings.enableLowStockAlerts,
     thermalPrinterName: settings.thermalPrinterName || '',
+    barcodePrinterName: settings.barcodePrinterName || '',
   });
   const [generalSaved, setGeneralSaved] = useState(false);
 
@@ -79,6 +80,7 @@ const Settings: React.FC = () => {
       taxRate: generalForm.taxRate * 0.01,
       enableLowStockAlerts: generalForm.enableLowStockAlerts,
       thermalPrinterName: generalForm.thermalPrinterName,
+      barcodePrinterName: generalForm.barcodePrinterName,
     });
     setGeneralSaved(true);
     setTimeout(() => setGeneralSaved(false), 2000);
@@ -346,6 +348,38 @@ const Settings: React.FC = () => {
                 )}
                 {generalForm.thermalPrinterName && (
                   <p className="text-xs text-emerald-600 font-medium">✓ Will print silently to: {generalForm.thermalPrinterName}</p>
+                )}
+              </div>
+
+              {/* Barcode Label Printer */}
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Printer size={16} className="text-slate-500" />
+                  <p className="font-medium text-slate-900">Barcode Label Printer</p>
+                </div>
+                <p className="text-sm text-slate-500">Select your barcode / sticker printer (e.g. XP-T451B). Used when printing product labels from Inventory.</p>
+                {availablePrinters.length > 0 ? (
+                  <select
+                    className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+                    value={generalForm.barcodePrinterName}
+                    onChange={e => setGeneralForm(prev => ({ ...prev, barcodePrinterName: e.target.value }))}
+                  >
+                    <option value="">-- Use default printer --</option>
+                    {availablePrinters.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="e.g. XP-T451B (leave blank for default)"
+                    className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
+                    value={generalForm.barcodePrinterName}
+                    onChange={e => setGeneralForm(prev => ({ ...prev, barcodePrinterName: e.target.value }))}
+                  />
+                )}
+                {generalForm.barcodePrinterName && (
+                  <p className="text-xs text-emerald-600 font-medium">✓ Will print labels to: {generalForm.barcodePrinterName}</p>
                 )}
               </div>
 

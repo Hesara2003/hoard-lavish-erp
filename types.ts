@@ -151,6 +151,7 @@ export interface AppSettings {
   taxRate: number;
   enableLowStockAlerts: boolean;
   thermalPrinterName?: string; // Name of the thermal printer for silent printing
+  barcodePrinterName?: string; // Name of the barcode label printer (e.g. XP-T451B)
 }
 
 export interface ExchangeRecord {
