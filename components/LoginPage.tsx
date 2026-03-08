@@ -249,7 +249,7 @@ const LoginPage: React.FC = () => {
                 </div>
 
                 {/* Footer */}
-                <p className="text-center text-slate-600 text-xs mt-6">Secured POS Terminal • v1.0</p>
+                <p className="text-center text-slate-600 text-xs mt-6">Secured POS Terminal • v{__APP_VERSION__}</p>
             </div>
         </div>
     );
