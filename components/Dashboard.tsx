@@ -1191,7 +1191,10 @@ const Dashboard: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-900">Dashboard</h2>
           <p className="text-slate-500 text-sm">Real-time overview of business performance.</p>
         </div>
-        <FilterControls />
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-slate-400 font-mono bg-slate-100 px-2 py-1 rounded">v{__APP_VERSION__}</span>
+          <FilterControls />
+        </div>
       </div>
 
       {/* OVERVIEW STATS — Admin only */}
