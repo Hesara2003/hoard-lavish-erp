@@ -158,6 +158,8 @@ ipcMain.handle('print-receipt', async (_event, html, printerName, options) => {
                 printBackground: true,
                 color: false,
                 margins: { marginType: 'none' },
+                header: '',
+                footer: '',
             };
 
             // Set a fixed pageSize when dimensions are explicitly supplied.
