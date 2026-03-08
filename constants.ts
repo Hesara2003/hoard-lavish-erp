@@ -32,6 +32,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   taxRate: 0.08,
   enableLowStockAlerts: true,
   thermalPrinterName: '',
+  barcodePrinterName: '',
 };
 
 export const INITIAL_SUPPLIERS: Supplier[] = [

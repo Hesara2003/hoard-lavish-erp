@@ -522,7 +522,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
 </body></html>`;
 
     if (isElectron) {
-      const printerName = settings?.thermalPrinterName || '';
+      const printerName = settings?.barcodePrinterName || '';
       await (window as any).electronAPI.printReceipt(html, printerName);
     } else {
       const w = window.open('', '_blank', 'width=300,height=250');
