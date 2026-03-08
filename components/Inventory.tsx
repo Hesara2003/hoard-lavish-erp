@@ -450,15 +450,15 @@ const Inventory: React.FC = () => {
 
     // Build barcode bars from the barcode string
     let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:0;">';
-    barsHtml += '<div style="width:2px;height:36px;background:#000;"></div><div style="width:1px;height:36px;background:#fff;"></div><div style="width:1px;height:36px;background:#000;"></div><div style="width:2px;height:36px;background:#fff;"></div>';
+    barsHtml += '<div style="width:1px;height:18px;background:#000;"></div><div style="width:1px;height:18px;background:#fff;"></div><div style="width:1px;height:18px;background:#000;"></div><div style="width:1px;height:18px;background:#fff;"></div>';
     for (let i = 0; i < barcode.length; i++) {
       const d = parseInt(barcode[i]) || 0;
-      barsHtml += '<div style="width:' + ((d % 3) + 1) + 'px;height:34px;background:#000;"></div>';
-      barsHtml += '<div style="width:' + ((d % 2) + 1) + 'px;height:34px;background:#fff;"></div>';
-      barsHtml += '<div style="width:' + (((d + 1) % 3) + 1) + 'px;height:34px;background:#000;"></div>';
-      barsHtml += '<div style="width:1px;height:34px;background:#fff;"></div>';
+      barsHtml += '<div style="width:' + ((d % 3) + 1) + 'px;height:16px;background:#000;"></div>';
+      barsHtml += '<div style="width:' + ((d % 2) + 1) + 'px;height:16px;background:#fff;"></div>';
+      barsHtml += '<div style="width:' + (((d + 1) % 3) + 1) + 'px;height:16px;background:#000;"></div>';
+      barsHtml += '<div style="width:1px;height:16px;background:#fff;"></div>';
     }
-    barsHtml += '<div style="width:1px;height:36px;background:#000;"></div><div style="width:2px;height:36px;background:#fff;"></div><div style="width:2px;height:36px;background:#000;"></div>';
+    barsHtml += '<div style="width:1px;height:18px;background:#000;"></div><div style="width:1px;height:18px;background:#fff;"></div><div style="width:1px;height:18px;background:#000;"></div>';
     barsHtml += '</div>';
 
     const html = `<!DOCTYPE html>
@@ -467,40 +467,44 @@ const Inventory: React.FC = () => {
 <style>
   /* Let the printer driver decide paper size — @page size:auto uses whatever
      label is loaded in the barcode printer (e.g. XP-T451B configured in Windows). */
-  @page { size: auto; margin: 0; }
+  @page { size: 38mm 25mm; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
-    width: 100%;
+    width: 38mm;
+    height: 25mm;
     font-family: Arial, Helvetica, sans-serif;
     background: #fff;
+    margin: 0;
+    overflow: hidden;
   }
   .label {
     width: 100%;
-    padding: 2mm 3mm;
+    height: 100%;
+    padding: 0.8mm 1mm;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
-    gap: 1.5mm;
+    justify-content: center;
+    gap: 0.3mm;
   }
-  .logo { height: 8mm; width: auto; max-width: 60%; object-fit: contain; }
+  .logo { height: 5mm; width: auto; max-width: 55%; object-fit: contain; }
   .name {
-    font-size: 10pt;
+    font-size: 7pt;
     font-weight: 700;
     text-align: center;
-    line-height: 1.2;
+    line-height: 1.1;
     width: 100%;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .size-tag { font-size: 8pt; color: #333; text-align: center; font-weight: 600; }
-  .price { font-size: 13pt; font-weight: 900; text-align: center; }
+  .size-tag { font-size: 5.5pt; color: #333; text-align: center; font-weight: 600; }
+  .price { font-size: 9pt; font-weight: 900; text-align: center; }
   .barcode-wrap { display: flex; flex-direction: column; align-items: center; width: 100%; }
-  .barcode-num { font-family: 'Courier New', monospace; font-size: 7pt; letter-spacing: 1.5px; margin-top: 1mm; }
+  .barcode-num { font-family: 'Courier New', monospace; font-size: 5pt; letter-spacing: 0.8px; margin-top: 0.3mm; }
   @media print {
     html, body { margin: 0; }
-    @page { size: auto; margin: 0; }
+    @page { size: 38mm 25mm; margin: 0; }
   }
 </style>
 </head><body>
@@ -522,7 +526,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
     if (isElectron) {
       const printerName = settings?.barcodePrinterName || '';
       // No pageWidthMm — printer uses its own configured label size from Windows
-      await (window as any).electronAPI.printReceipt(html, printerName, {});
+      await (window as any).electronAPI.printReceipt(html, printerName, { pageWidthMm: 38, pageHeightMm: 25 });
     } else {
       const w = window.open('', '_blank', 'width=300,height=250');
       if (!w) return;

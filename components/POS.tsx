@@ -303,8 +303,8 @@ const POS: React.FC = () => {
 <meta charset="utf-8"/>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:Arial,Helvetica,sans-serif; width:80mm; margin:0; padding:0; background:#fff; color:#000; font-size:13px; }
-.wrap { width:80mm; padding:3mm 3mm 10mm 3mm; }
+body { font-family:Arial,Helvetica,sans-serif; width:76mm; margin:0 auto; padding:0; background:#fff; color:#000; font-size:13px; }
+.wrap { width:100%; padding:3mm 2mm 10mm 2mm; }
 .meta { display:flex; justify-content:space-between; font-size:10px; color:#555; margin-bottom:4px; }
 .logo-wrap { text-align:center; margin:2px 0 4px; }
 .logo-wrap img { width:52mm; max-width:100%; height:auto; display:block; margin:0 auto; }
@@ -330,7 +330,7 @@ table.totals .val { text-align:right; white-space:nowrap; }
 .barcode-wrap { text-align:center; margin-top:6px; }
 .barcode-num { font-size:12px; letter-spacing:3px; margin-top:4px; font-family:'Courier New',monospace; }
 .credit { text-align:center; font-size:10px; color:#444; margin-top:7px; line-height:1.6; }
-@media print { body { margin:0; padding:0; } .wrap { padding:2mm 3mm 8mm 3mm; } @page { size:80mm auto; margin:0; } }
+@media print { body { margin:0 auto; padding:0; } .wrap { padding:2mm 2mm 8mm 2mm; } @page { size:80mm auto; margin:0; } }
 </style>
 </head><body>
 <div class="wrap">
