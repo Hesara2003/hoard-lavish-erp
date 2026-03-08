@@ -59,7 +59,7 @@ const Inventory: React.FC = () => {
     products, categories, brands, stockHistory, currentBranch, branches,
     addProduct, updateProduct, deleteProduct, adjustStock, transferStock,
     addCategory, removeCategory, addBrand, removeBrand,
-    currentUser, stockTransfers
+    currentUser, stockTransfers, settings
   } = useStore();
   const isCashier = currentUser?.role === 'CASHIER';
 
@@ -430,123 +430,106 @@ const Inventory: React.FC = () => {
     return code + checkDigit.toString();
   };
 
-  const handlePrintBarcode = () => {
+  const handlePrintBarcode = async () => {
     if (!editingProduct) return;
     const barcode = editingProduct.barcode || '';
     const name = editingProduct.name || 'Product';
     const price = Number(editingProduct.price) || 0;
-    const color = editingProduct.color || '';
     const size = editingProduct.size || '';
     if (!barcode) return;
 
-    // Create a temporary container for printing
-    const printContainer = document.createElement('div');
-    printContainer.style.position = 'fixed';
-    printContainer.style.top = '0';
-    printContainer.style.left = '0';
-    printContainer.style.width = '100%';
-    printContainer.style.height = '100%';
-    printContainer.style.zIndex = '-9999';
-    printContainer.style.visibility = 'hidden';
+    const isElectron = !!(window as any).electronAPI?.printReceipt;
 
-    let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;">';
-    barsHtml += '<div style="width:2px;height:40px;background:#000;"></div><div style="width:1px;height:40px;background:#fff;"></div><div style="width:1px;height:40px;background:#000;"></div><div style="width:2px;height:40px;background:#fff;"></div>';
+    // Fetch logo as base64 in Electron so it renders inside the isolated print window
+    let logoSrc = window.location.origin + '/logo.png';
+    if (isElectron && (window as any).electronAPI?.getLogoBase64) {
+      const b64 = await (window as any).electronAPI.getLogoBase64();
+      if (b64) logoSrc = b64;
+    }
+
+    // Build barcode bars from the barcode string
+    let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:0;">';
+    barsHtml += '<div style="width:2px;height:36px;background:#000;"></div><div style="width:1px;height:36px;background:#fff;"></div><div style="width:1px;height:36px;background:#000;"></div><div style="width:2px;height:36px;background:#fff;"></div>';
     for (let i = 0; i < barcode.length; i++) {
       const d = parseInt(barcode[i]) || 0;
-      barsHtml += '<div style="width:' + ((d % 3) + 1) + 'px;height:38px;background:#000;"></div>';
-      barsHtml += '<div style="width:' + ((d % 2) + 1) + 'px;height:38px;background:#fff;"></div>';
-      barsHtml += '<div style="width:' + (((d + 1) % 3) + 1) + 'px;height:38px;background:#000;"></div>';
-      barsHtml += '<div style="width:1px;height:38px;background:#fff;"></div>';
+      barsHtml += '<div style="width:' + ((d % 3) + 1) + 'px;height:34px;background:#000;"></div>';
+      barsHtml += '<div style="width:' + ((d % 2) + 1) + 'px;height:34px;background:#fff;"></div>';
+      barsHtml += '<div style="width:' + (((d + 1) % 3) + 1) + 'px;height:34px;background:#000;"></div>';
+      barsHtml += '<div style="width:1px;height:34px;background:#fff;"></div>';
     }
-    barsHtml += '<div style="width:1px;height:40px;background:#000;"></div><div style="width:2px;height:40px;background:#fff;"></div><div style="width:2px;height:40px;background:#000;"></div>';
+    barsHtml += '<div style="width:1px;height:36px;background:#000;"></div><div style="width:2px;height:36px;background:#fff;"></div><div style="width:2px;height:36px;background:#000;"></div>';
     barsHtml += '</div>';
 
-    const variantParts = [color, size].filter(Boolean).join(' / ');
-    
-    // Create label content optimized for 40x30mm or 50x30mm sticker
-    const labelContent = `
-      <style>
-        @page { 
-          size: 50mm 30mm; 
-          margin: 0; 
-        }
-        * { 
-          margin: 0; 
-          padding: 0; 
-          box-sizing: border-box; 
-        }
-        body { 
-          width: 50mm;
-          height: 30mm;
-          font-family: Arial, sans-serif;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .label { 
-          width: 100%;
-          height: 100%;
-          padding: 2mm;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          background: #fff;
-        }
-        .product-name { 
-          font-size: 8pt;
-          font-weight: bold;
-          text-align: center;
-          margin-bottom: 1mm;
-          line-height: 1.1;
-          max-height: 16pt;
-          overflow: hidden;
-        }
-        .variant { 
-          font-size: 6pt;
-          text-align: center;
-          margin-bottom: 1mm;
-          color: #333;
-        }
-        .price { 
-          font-size: 11pt;
-          font-weight: bold;
-          margin-bottom: 1mm;
-        }
-        .barcode-visual { 
-          margin-bottom: 1mm;
-          transform: scale(0.8);
-        }
-        .barcode-number { 
-          font-family: monospace;
-          font-size: 7pt;
-          letter-spacing: 1px;
-        }
-      </style>
-      <div class="label">
-        <div class="product-name">${name}</div>
-        ${variantParts ? '<div class="variant">' + variantParts + '</div>' : ''}
-        <div class="price">${CUR} ${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-        <div class="barcode-visual">${barsHtml}</div>
-        <div class="barcode-number">${barcode}</div>
-      </div>
-    `;
+    const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"/>
+<style>
+  @page { size: 50mm 30mm; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 50mm;
+    height: 30mm;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .label {
+    width: 50mm;
+    height: 30mm;
+    padding: 1.5mm 2mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo { height: 6mm; width: auto; max-width: 28mm; object-fit: contain; }
+  .name {
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.15;
+    max-width: 46mm;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .size { font-size: 6pt; color: #444; text-align: center; margin-top: 0.5mm; }
+  .price { font-size: 10.5pt; font-weight: 900; text-align: center; }
+  .barcode-wrap { display: flex; flex-direction: column; align-items: center; }
+  .barcode-num { font-family: 'Courier New', monospace; font-size: 5.5pt; letter-spacing: 1px; margin-top: 0.5mm; }
+  @media print {
+    body { margin: 0; }
+    @page { size: 50mm 30mm; margin: 0; }
+  }
+</style>
+</head><body>
+<div class="label">
+  <img class="logo" src="${logoSrc}" alt="Hoard Lavish"/>
+  <div>
+    <div class="name">${name}</div>
+    ${size ? `<div class="size">${size}</div>` : ''}
+  </div>
+  <div class="price">LKR ${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+  <div class="barcode-wrap">
+    ${barsHtml}
+    <div class="barcode-num">${barcode}</div>
+  </div>
+</div>
+${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>'}
+</body></html>`;
 
-    printContainer.innerHTML = labelContent;
-    document.body.appendChild(printContainer);
-
-    // Use silent print if available (Electron), otherwise use window.print
-    setTimeout(() => {
-      if (window.electronAPI?.silentPrint) {
-        window.electronAPI.silentPrint();
-      } else {
-        window.print();
-      }
-      // Remove the container after printing
-      setTimeout(() => {
-        document.body.removeChild(printContainer);
-      }, 1000);
-    }, 100);
+    if (isElectron) {
+      const printerName = settings?.thermalPrinterName || '';
+      await (window as any).electronAPI.printReceipt(html, printerName);
+    } else {
+      const w = window.open('', '_blank', 'width=300,height=250');
+      if (!w) return;
+      w.document.write(html);
+      w.document.close();
+    }
   };
 
   // Tab button component

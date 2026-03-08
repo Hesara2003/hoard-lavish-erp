@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Settings as SettingsIcon, Users, Database, Shield, Tag, Save, Upload, Download, Trash2, Plus, Edit2, CheckCircle, AlertTriangle, X, Lock, FileSpreadsheet, FileDown, PackagePlus } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Settings as SettingsIcon, Users, Database, Shield, Tag, Save, Upload, Download, Trash2, Plus, Edit2, CheckCircle, AlertTriangle, X, Lock, FileSpreadsheet, FileDown, PackagePlus, Printer } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { User, Role, Product } from '../types';
 
@@ -56,16 +56,29 @@ const Settings: React.FC = () => {
     storeName: settings.storeName,
     currencySymbol: settings.currencySymbol,
     taxRate: settings.taxRate * 100,
-    enableLowStockAlerts: settings.enableLowStockAlerts
+    enableLowStockAlerts: settings.enableLowStockAlerts,
+    thermalPrinterName: settings.thermalPrinterName || '',
   });
   const [generalSaved, setGeneralSaved] = useState(false);
+
+  // Thermal printer list from Electron
+  const [availablePrinters, setAvailablePrinters] = useState<string[]>([]);
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (api?.getPrinters) {
+      api.getPrinters().then((list: any[]) => {
+        setAvailablePrinters(list.map((p: any) => p.name).filter(Boolean));
+      }).catch(() => {});
+    }
+  }, []);
 
   const handleSaveGeneral = () => {
     updateSettings({
       storeName: generalForm.storeName,
       currencySymbol: generalForm.currencySymbol,
       taxRate: generalForm.taxRate * 0.01,
-      enableLowStockAlerts: generalForm.enableLowStockAlerts
+      enableLowStockAlerts: generalForm.enableLowStockAlerts,
+      thermalPrinterName: generalForm.thermalPrinterName,
     });
     setGeneralSaved(true);
     setTimeout(() => setGeneralSaved(false), 2000);
@@ -302,6 +315,38 @@ const Settings: React.FC = () => {
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                 </label>
+              </div>
+
+              {/* Thermal Printer */}
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Printer size={16} className="text-slate-500" />
+                  <p className="font-medium text-slate-900">Thermal Receipt Printer</p>
+                </div>
+                <p className="text-sm text-slate-500">Select your thermal printer to skip the print dialog. Receipts will print silently.</p>
+                {availablePrinters.length > 0 ? (
+                  <select
+                    className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+                    value={generalForm.thermalPrinterName}
+                    onChange={e => setGeneralForm(prev => ({ ...prev, thermalPrinterName: e.target.value }))}
+                  >
+                    <option value="">-- Use default printer --</option>
+                    {availablePrinters.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="e.g. XP-E200L (leave blank for default)"
+                    className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
+                    value={generalForm.thermalPrinterName}
+                    onChange={e => setGeneralForm(prev => ({ ...prev, thermalPrinterName: e.target.value }))}
+                  />
+                )}
+                {generalForm.thermalPrinterName && (
+                  <p className="text-xs text-emerald-600 font-medium">✓ Will print silently to: {generalForm.thermalPrinterName}</p>
+                )}
               </div>
 
               <div className="flex justify-end pt-2">

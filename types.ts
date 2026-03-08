@@ -150,6 +150,7 @@ export interface AppSettings {
   currencySymbol: string;
   taxRate: number;
   enableLowStockAlerts: boolean;
+  thermalPrinterName?: string; // Name of the thermal printer for silent printing
 }
 
 export interface ExchangeRecord {

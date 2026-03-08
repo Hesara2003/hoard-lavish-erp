@@ -111,6 +111,77 @@ ipcMain.on('silent-print', () => {
     }
 });
 
+// ─── Logo as base64 for receipts ─────────────────────────
+const fs = require('fs');
+ipcMain.handle('get-logo-base64', () => {
+    // In production: dist/logo.png sits next to index.html (one level up from dist-electron)
+    // In dev: public/logo.png
+    const candidates = [
+        path.join(__dirname, '../dist/logo.png'),
+        path.join(__dirname, '../public/logo.png'),
+    ];
+    for (const p of candidates) {
+        if (fs.existsSync(p)) {
+            const data = fs.readFileSync(p);
+            return 'data:image/png;base64,' + data.toString('base64');
+        }
+    }
+    return '';
+});
+
+// ─── Silent Thermal Receipt Printing ───────────────────
+ipcMain.handle('get-printers', async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        return await mainWindow.webContents.getPrintersAsync();
+    }
+    return [];
+});
+
+ipcMain.handle('print-receipt', async (_event, html, printerName) => {
+    return new Promise((resolve) => {
+        // Create a hidden off-screen window to render & print the receipt
+        const printWin = new BrowserWindow({
+            width: 600,
+            height: 900,
+            show: false,
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+            },
+        });
+
+        printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+
+        printWin.webContents.once('did-finish-load', () => {
+            const printOptions = {
+                silent: true,
+                printBackground: true,
+                color: false,
+                margins: { marginType: 'none' },
+                pageSize: { width: 80000, height: 297000 }, // 80mm wide, auto height in microns
+            };
+
+            // Attach printer name only when one is configured
+            if (printerName && printerName.trim()) {
+                printOptions.deviceName = printerName.trim();
+            }
+
+            printWin.webContents.print(printOptions, (success, errorType) => {
+                printWin.destroy();
+                resolve({ success, errorType: errorType || null });
+            });
+        });
+
+        // Safety timeout — destroy window if it hangs
+        setTimeout(() => {
+            if (!printWin.isDestroyed()) {
+                printWin.destroy();
+                resolve({ success: false, errorType: 'timeout' });
+            }
+        }, 15000);
+    });
+});
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();
