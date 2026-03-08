@@ -158,15 +158,14 @@ ipcMain.handle('print-receipt', async (_event, html, printerName, options) => {
         printWin.loadFile(tmpHtmlPath);
 
         printWin.webContents.once('did-finish-load', () => {
+            // marginType 'none' is the ONLY value that suppresses Chromium
+            // header/footer printing (date, URL, title, page number).
+            // 'custom' with zeros still renders headers/footers.
             const printOptions = {
                 silent: true,
                 printBackground: true,
                 color: false,
-                // Use explicit zero custom margins to prevent any header/footer space
-                margins: { marginType: 'custom', top: 0, bottom: 0, left: 0, right: 0 },
-                // Single-space strings suppress default date/URL header/footer text
-                header: ' ',
-                footer: ' ',
+                margins: { marginType: 'none' },
             };
 
             // Set a fixed pageSize when dimensions are explicitly supplied.
