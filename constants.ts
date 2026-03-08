@@ -30,7 +30,8 @@ export const INITIAL_SETTINGS: AppSettings = {
   storeName: 'Hoard Lavish',
   currencySymbol: '$',
   taxRate: 0.08,
-  enableLowStockAlerts: true
+  enableLowStockAlerts: true,
+  thermalPrinterName: '',
 };
 
 export const INITIAL_SUPPLIERS: Supplier[] = [

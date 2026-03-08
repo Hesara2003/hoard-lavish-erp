@@ -35,7 +35,7 @@ const AlertPopup: React.FC<{ message: string; type?: 'error' | 'warning'; onClos
 );
 
 const POS: React.FC = () => {
-  const { products, customers, cart, salesHistory, addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch, currentUser } = useStore();
+  const { products, customers, cart, salesHistory, addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch, currentUser, settings } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -246,16 +246,24 @@ const POS: React.FC = () => {
     setIsCustomerDropdownOpen(false);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!lastSale) return;
-    const printWindow = window.open('', '_blank', 'width=400,height=700');
-    if (!printWindow) return;
+
+    // Build the receipt HTML (same content, but no auto-print script when using Electron)
+    const isElectron = !!(window as any).electronAPI?.printReceipt;
 
     const sale = lastSale;
     const fmtRs = (n: number) => `Rs. ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const discountPercent = sale.subtotal > 0 ? ((sale.discount / sale.subtotal) * 100).toFixed(2) : '0.00';
     const totalSavings = sale.items.reduce((s, i) => s + (i.discount || 0) * i.quantity, 0) + sale.discount;
-    const logoUrl = window.location.origin + '/logo.png';
+
+    // In Electron the print window is a data: URL so relative/origin paths don't resolve.
+    // Read the logo via IPC so it's embedded as a base64 data URI.
+    let logoUrl = window.location.origin + '/logo.png';
+    if (isElectron && (window as any).electronAPI?.getLogoBase64) {
+      const b64 = await (window as any).electronAPI.getLogoBase64();
+      if (b64) logoUrl = b64;
+    }
 
     // Meta line date: "27/02/2026 4:17 PM"
     const sd = new Date(sale.date);
@@ -396,12 +404,22 @@ table.totals .val { text-align:right; white-space:nowrap; }
   ${footerDate}
 </div>
 
-<script>window.onload=function(){window.print();};<\/script>
+${isElectron ? '' : '<script>window.onload=function(){window.print();};<\/script>'}
 </body></html>`;
 
-    printWindow.document.write(html);
-    printWindow.document.close();
-    setTimeout(() => setIsInvoiceOpen(false), 800);
+    if (isElectron) {
+      // Silent print directly to the configured thermal printer — no dialog
+      const printerName = settings?.thermalPrinterName || '';
+      await (window as any).electronAPI.printReceipt(html, printerName);
+      setTimeout(() => setIsInvoiceOpen(false), 300);
+    } else {
+      // Fallback for non-Electron environments
+      const printWindow = window.open('', '_blank', 'width=400,height=700');
+      if (!printWindow) return;
+      printWindow.document.write(html);
+      printWindow.document.close();
+      setTimeout(() => setIsInvoiceOpen(false), 800);
+    }
   };
 
   // === Exchange Helpers ===
@@ -483,9 +501,8 @@ table.totals .val { text-align:right; white-space:nowrap; }
     resetExchangeState();
   };
 
-  const handlePrintExchangeInvoice = (exchange: ExchangeRecord) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+  const handlePrintExchangeInvoice = async (exchange: ExchangeRecord) => {
+    const isElectron = !!(window as any).electronAPI?.printReceipt;
     const fmtC = (n: number) => `LKR ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const html = `<!DOCTYPE html><html><head><title>Exchange ${exchange.exchangeNumber}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif}body{padding:32px;color:#1e293b;max-width:500px;margin:0 auto}
@@ -529,9 +546,16 @@ ${exchange.newItems.map(i => `<tr><td>${i.name}${i.size || i.color ? `<div style
 </div>
 ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;background:#f8fafc;border-radius:6px;font-size:11px;color:#64748b"><strong>Note:</strong> ${exchange.description}</div>` : ''}
 <div class="footer">Thank you — Hoard Lavish ERP</div>
-<script>window.onload=function(){window.print();}</script></body></html>`;
-    printWindow.document.write(html);
-    printWindow.document.close();
+${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>'}</body></html>`;
+    if (isElectron) {
+      const printerName = settings?.thermalPrinterName || '';
+      await (window as any).electronAPI.printReceipt(html, printerName);
+    } else {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) return;
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
   };
 
   const resetExchangeState = () => {
