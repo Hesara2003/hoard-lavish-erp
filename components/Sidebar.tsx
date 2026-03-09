@@ -1,11 +1,13 @@
-import React from 'react';
-import { LayoutDashboard, ShoppingCart, Package, Settings, LogOut, History, Store, ChevronDown, Truck, PieChart, Users } from 'lucide-react';
+import React, { useState } from 'react';
+import { LayoutDashboard, ShoppingCart, Package, Settings, LogOut, History, Store, ChevronDown, Truck, PieChart, Users, RefreshCw, Cloud, CloudOff, Check, AlertCircle } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { ViewState, Role } from '../types';
 
 const Sidebar: React.FC = () => {
-  const { currentView, setView, branches, currentBranch, setBranch, currentUser, logout } = useStore();
+  const { currentView, setView, branches, currentBranch, setBranch, currentUser, logout, syncData, lastSyncTime, isCloudConnected } = useStore();
   const role: Role = currentUser?.role || 'CASHIER';
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewState, icon: any, label: string }) => (
     <button
@@ -73,6 +75,54 @@ const Sidebar: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Cloud Status */}
+        <div className="flex items-center gap-2 px-4 py-1.5 mb-1">
+          {isCloudConnected ? (
+            <Cloud size={14} className="text-green-500" />
+          ) : (
+            <CloudOff size={14} className="text-red-400" />
+          )}
+          <span className={`text-[11px] font-medium ${isCloudConnected ? 'text-green-600' : 'text-red-400'}`}>
+            {isCloudConnected ? 'Cloud Connected' : 'Offline / Local Only'}
+          </span>
+        </div>
+        {lastSyncTime && (
+          <p className="text-[10px] text-slate-400 px-4 mb-1">
+            Last sync: {lastSyncTime.toLocaleTimeString()}
+          </p>
+        )}
+
+        {/* Sync Result Toast */}
+        {syncResult && (
+          <div className={`mx-2 mb-1 px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2 ${
+            syncResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+          }`}>
+            {syncResult.success ? <Check size={14} /> : <AlertCircle size={14} />}
+            <span className="flex-1">{syncResult.message}</span>
+          </div>
+        )}
+
+        <button
+          onClick={async () => {
+            setSyncing(true);
+            setSyncResult(null);
+            const result = await syncData();
+            if (result.success) {
+              setSyncResult({ success: true, message: `Synced! ${result.productCount} products loaded.` });
+            } else {
+              setSyncResult({ success: false, message: result.error || 'Sync failed' });
+            }
+            setSyncing(false);
+            // Auto-clear success message after 5 seconds
+            setTimeout(() => setSyncResult(null), 5000);
+          }}
+          disabled={syncing}
+          className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors mb-1"
+        >
+          <RefreshCw size={20} className={syncing ? 'animate-spin' : ''} />
+          <span className="font-medium">{syncing ? 'Syncing...' : 'Sync Data'}</span>
+        </button>
         <button onClick={logout} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
           <LogOut size={20} />
           <span className="font-medium">Logout</span>

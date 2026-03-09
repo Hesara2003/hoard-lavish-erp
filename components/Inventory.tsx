@@ -441,13 +441,6 @@ const Inventory: React.FC = () => {
 
     const isElectron = !!(window as any).electronAPI?.printReceipt;
 
-    // Fetch logo as base64 in Electron so it renders inside the isolated print window
-    let logoSrc = window.location.origin + '/logo.png';
-    if (isElectron && (window as any).electronAPI?.getLogoBase64) {
-      const b64 = await (window as any).electronAPI.getLogoBase64();
-      if (b64) logoSrc = b64;
-    }
-
     // Build barcode bars from the barcode string
     let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:0;">';
     barsHtml += '<div style="width:1px;height:16px;background:#000;"></div><div style="width:1px;height:16px;background:#fff;"></div><div style="width:1px;height:16px;background:#000;"></div><div style="width:1px;height:16px;background:#fff;"></div>';
@@ -464,7 +457,7 @@ const Inventory: React.FC = () => {
     // Single label cell HTML (reused for left & right sticker)
     const labelCell = `
       <div class="label">
-        <img class="logo" src="${logoSrc}" alt="HL"/>
+        <div class="brand">HOARD LAVISH</div>
         <div class="name">${name}</div>
         ${(size || color) ? `<div class="size-tag">${[color, size].filter(Boolean).join(' / ')}</div>` : ''}
         <div class="price">LKR ${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -501,19 +494,19 @@ const Inventory: React.FC = () => {
   .label {
     width: 38mm;
     height: 25mm;
-    padding: 0.8mm 1mm;
+    padding: 0.5mm 1mm;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.3mm;
+    gap: 0.2mm;
     overflow: hidden;
   }
   .gap {
     width: 4mm;
     flex-shrink: 0;
   }
-  .logo { height: 4.5mm; width: auto; max-width: 50%; object-fit: contain; }
+  .brand { font-size: 6pt; font-weight: 900; text-align: center; letter-spacing: 1.5px; color: #000; }
   .name {
     font-size: 6.5pt;
     font-weight: 700;
@@ -527,7 +520,7 @@ const Inventory: React.FC = () => {
   .size-tag { font-size: 5pt; color: #333; text-align: center; font-weight: 600; }
   .price { font-size: 8pt; font-weight: 900; text-align: center; }
   .barcode-wrap { display: flex; flex-direction: column; align-items: center; width: 100%; }
-  .barcode-num { font-family: 'Courier New', monospace; font-size: 4.5pt; letter-spacing: 0.5px; margin-top: 0.3mm; }
+  .barcode-num { font-family: 'Courier New', monospace; font-size: 6pt; font-weight: 700; letter-spacing: 0.8px; margin-top: 0.2mm; color: #000; }
   @media print {
     html, body { margin: 0; padding: 0; }
     @page { size: 80mm 25mm; margin: 0; }

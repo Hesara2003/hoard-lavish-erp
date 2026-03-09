@@ -13,6 +13,39 @@ import Settings from './components/Settings';
 import LoginPage from './components/LoginPage';
 import UpdateNotification from './components/UpdateNotification';
 
+// Database Error Banner
+const DbErrorBanner: React.FC = () => {
+  const { dbError, dismissDbError, syncData } = useStore();
+  const [syncing, setSyncing] = React.useState(false);
+
+  if (!dbError) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[100] bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-lg">
+      <div className="flex items-center gap-2 text-sm">
+        <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span><strong>Database Error:</strong> {dbError}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={async () => { setSyncing(true); await syncData(); setSyncing(false); }}
+          className="px-3 py-1 text-xs font-medium bg-white/20 hover:bg-white/30 rounded transition-colors"
+        >
+          {syncing ? 'Syncing...' : 'Retry Sync'}
+        </button>
+        <button
+          onClick={dismissDbError}
+          className="px-2 py-1 text-xs font-medium bg-white/20 hover:bg-white/30 rounded transition-colors"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // Main Layout Component handling the view switching
 const Layout: React.FC = () => {
   const { currentView, currentUser } = useStore();
@@ -72,6 +105,7 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <StoreProvider>
+      <DbErrorBanner />
       <AppContent />
       <UpdateNotification />
     </StoreProvider>
