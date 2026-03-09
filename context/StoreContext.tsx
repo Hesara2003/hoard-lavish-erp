@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Product, CartItem, SalesRecord, ViewState, Customer, StockMovement, Branch, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer, StockTransferItem, ExchangeRecord } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_CUSTOMERS, INITIAL_CATEGORIES, INITIAL_BRANDS, INITIAL_BRANCHES, INITIAL_SUPPLIERS, INITIAL_EXPENSES, INITIAL_USERS, INITIAL_SETTINGS } from '../constants';
 import * as db from '../services/supabaseService';
+import { supabase } from '../services/supabaseClient';
 import { calculateCartTotals } from '../utils/cart';
 import { generateInvoiceNumber, generateTransferNumber } from '../utils/generators';
 
@@ -79,6 +80,11 @@ interface StoreContextType {
   exportData: () => string;
   importData: (jsonData: string) => boolean;
 
+  syncData: () => Promise<{ success: boolean; productCount?: number; error?: string }>;
+  dismissDbError: () => void;
+  lastSyncTime: Date | null;
+  isCloudConnected: boolean;
+
   login: (user: User) => void;
   logout: () => void;
   setView: (view: ViewState) => void;
@@ -118,6 +124,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isLoading, setIsLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
 
   const useSupabase = isSupabaseConfigured();
 
@@ -230,9 +238,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setStockTransfers(stockTransfersData);
         setExchangeHistory(exchangeData);
         if (branchesData.length > 0) setCurrentBranch(branchesData[0]);
+        setIsCloudConnected(true);
+        setLastSyncTime(new Date());
       } catch (err: unknown) {
         console.error('Failed to load data from Supabase', err);
         setDbError(err instanceof Error ? err.message : 'Failed to load data');
+        setIsCloudConnected(false);
       } finally {
         setIsLoading(false);
         setHasLoaded(true);
@@ -240,6 +251,106 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     loadAll();
   }, [useSupabase]);
+
+  // ---- Supabase Realtime subscriptions for cross-device sync ----
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const refreshFromSupabase = useCallback(async (): Promise<{ success: boolean; productCount?: number; error?: string }> => {
+    if (!useSupabase) return { success: false, error: 'Cloud database not configured. Using local storage only.' };
+    try {
+      const [
+        productsData,
+        customersData,
+        salesData,
+        stockData,
+        suppliersData,
+        supplierTxnData,
+        expensesData,
+        categoriesData,
+        brandsData,
+        damagedGoodsData,
+      ] = await Promise.all([
+        db.fetchProductsWithStock(),
+        db.fetchCustomers(),
+        db.fetchSales(),
+        db.fetchStockMovements(),
+        db.fetchSuppliers(),
+        db.fetchSupplierTransactions(),
+        db.fetchExpenses(),
+        db.fetchCategories(),
+        db.fetchBrands(),
+        db.fetchDamagedGoods(),
+      ]);
+
+      let stockTransfersData: StockTransfer[] = [];
+      try {
+        stockTransfersData = await db.fetchStockTransfers();
+      } catch (_) { /* table may not exist */ }
+
+      setProducts(productsData);
+      setCustomers(customersData);
+      setSalesHistory(salesData);
+      setStockHistory(stockData);
+      setSuppliers(suppliersData);
+      setSupplierTransactions(supplierTxnData);
+      setExpenses(expensesData);
+      setCategories(categoriesData);
+      setBrands(brandsData);
+      setDamagedGoods(damagedGoodsData);
+      if (stockTransfersData.length > 0) setStockTransfers(stockTransfersData);
+      setLastSyncTime(new Date());
+      setIsCloudConnected(true);
+      setDbError(null);
+      return { success: true, productCount: productsData.length };
+    } catch (err: unknown) {
+      console.error('Failed to refresh data from Supabase', err);
+      const errorMsg = err instanceof Error ? err.message : 'Failed to sync with cloud database';
+      setDbError(errorMsg);
+      setIsCloudConnected(false);
+      return { success: false, error: errorMsg };
+    }
+  }, [useSupabase]);
+
+  // Debounced refresh to avoid flooding on rapid changes
+  const debouncedRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshFromSupabase();
+    }, 1000);
+  }, [refreshFromSupabase]);
+
+  useEffect(() => {
+    if (!useSupabase || !hasLoaded) return;
+
+    // Subscribe to Realtime changes on key tables for cross-device sync
+    const channel = supabase
+      .channel('db-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_branch_stock' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers' }, () => debouncedRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => debouncedRefresh())
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status);
+      });
+
+    // Also set up periodic polling as fallback (every 30 seconds)
+    const pollInterval = setInterval(() => {
+      refreshFromSupabase();
+    }, 30000);
+    pollingRef.current = pollInterval;
+
+    return () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [useSupabase, hasLoaded, debouncedRefresh, refreshFromSupabase]);
 
   // ---- localStorage fallback persistence ----
   useEffect(() => {
@@ -1007,6 +1118,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const syncData = async (): Promise<{ success: boolean; productCount?: number; error?: string }> => {
+    return await refreshFromSupabase();
+  };
+
+  const dismissDbError = () => setDbError(null);
+
   const setView = (view: ViewState) => setCurrentView(view);
 
   const login = (user: User) => {
@@ -1027,7 +1144,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <StoreContext.Provider value={{
       products, customers, cart, salesHistory, stockHistory, stockTransfers, exchangeHistory, categories, brands, branches, suppliers, supplierTransactions, expenses, damagedGoods, users, settings,
-      currentBranch, currentUser, currentView, isLoading, dbError,
+      currentBranch, currentUser, currentView, isLoading, dbError, lastSyncTime, isCloudConnected,
       setBranch, addBranch, updateBranch,
       addProduct, updateProduct, deleteProduct,
       addCustomer, updateCustomer, deleteCustomer,
@@ -1039,6 +1156,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addDamagedGood, deleteDamagedGood,
       addUser, updateUser, deleteUser,
       updateSettings, exportData, importData,
+      syncData, dismissDbError,
       login, logout, setView
     }}>
       {children}
