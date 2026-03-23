@@ -36,7 +36,8 @@ interface StoreContextType {
 
   addProduct: (product: Product) => void;
   updateProduct: (id: string, updates: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
+  deleteProduct: (id: string, mode?: 'BLOCK_IF_LINKED' | 'KEEP_SALES_SNAPSHOT' | 'DELETE_LINKED_SALES') => Promise<boolean>;
+  getProductSalesUsage: (id: string) => Promise<number>;
 
   addCustomer: (customer: Customer) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
@@ -501,9 +502,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const deleteProduct = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
-    dbCall(() => db.deleteProduct(id));
+  const getProductSalesUsage = async (id: string): Promise<number> => {
+    if (!useSupabase) return 0;
+    try {
+      return await db.getProductLinkedSalesCount(id);
+    } catch (err: unknown) {
+      console.error('Failed to check product sales usage:', err);
+      setDbError(err instanceof Error ? err.message : 'Failed to check product sales usage');
+      return 0;
+    }
+  };
+
+  const deleteProduct = async (id: string, mode: 'BLOCK_IF_LINKED' | 'KEEP_SALES_SNAPSHOT' | 'DELETE_LINKED_SALES' = 'BLOCK_IF_LINKED'): Promise<boolean> => {
+    if (!useSupabase) {
+      setProducts(prev => prev.filter(p => p.id !== id));
+      return true;
+    }
+
+    try {
+      await db.deleteProduct(id, mode);
+      const syncResult = await refreshFromSupabase();
+      if (!syncResult.success) {
+        setProducts(prev => prev.filter(p => p.id !== id));
+      }
+      setDbError(null);
+      return true;
+    } catch (err: unknown) {
+      console.error('Failed to delete product:', err);
+      setDbError(err instanceof Error ? err.message : 'Failed to delete product');
+      return false;
+    }
   };
 
   // ============================================================
@@ -1189,7 +1217,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       products, customers, cart, salesHistory, stockHistory, stockTransfers, exchangeHistory, categories, brands, branches, suppliers, supplierTransactions, expenses, damagedGoods, users, settings,
       currentBranch, currentUser, currentView, isLoading, dbError, lastSyncTime, isCloudConnected, realtimeStatus,
       setBranch, addBranch, updateBranch,
-      addProduct, updateProduct, deleteProduct,
+      addProduct, updateProduct, deleteProduct, getProductSalesUsage,
       addCustomer, updateCustomer, deleteCustomer,
       addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, clearCart,
       completeSale, updateSale, deleteSale, completeExchange, adjustStock, transferStock,
