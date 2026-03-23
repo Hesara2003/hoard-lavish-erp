@@ -154,7 +154,50 @@ export async function updateProduct(id: string, updates: Partial<Product>): Prom
     }
 }
 
-export async function deleteProduct(id: string): Promise<void> {
+export type ProductDeleteMode = 'BLOCK_IF_LINKED' | 'KEEP_SALES_SNAPSHOT' | 'DELETE_LINKED_SALES';
+
+async function getLinkedSaleIds(productId: string): Promise<string[]> {
+    const { data, error } = await supabase
+        .from('sale_items')
+        .select('sale_id')
+        .eq('product_id', productId);
+    if (error) throw error;
+    return Array.from(new Set((data ?? []).map(r => r.sale_id).filter(Boolean)));
+}
+
+export async function getProductLinkedSalesCount(productId: string): Promise<number> {
+    const ids = await getLinkedSaleIds(productId);
+    return ids.length;
+}
+
+export async function deleteProduct(id: string, mode: ProductDeleteMode = 'BLOCK_IF_LINKED'): Promise<void> {
+    const linkedSaleIds = await getLinkedSaleIds(id);
+
+    if (linkedSaleIds.length > 0 && mode === 'BLOCK_IF_LINKED') {
+        throw new Error('Cannot delete this product because it is linked to sales history.');
+    }
+
+    if (linkedSaleIds.length > 0 && mode === 'KEEP_SALES_SNAPSHOT') {
+        const { error: unlinkError } = await supabase
+            .from('sale_items')
+            .update({ product_id: null })
+            .eq('product_id', id);
+        if (unlinkError) {
+            if ((unlinkError as { code?: string }).code === '23502') {
+                throw new Error('Database migration required: sale_items.product_id must allow NULL before unlink-delete can work.');
+            }
+            throw unlinkError;
+        }
+    }
+
+    if (linkedSaleIds.length > 0 && mode === 'DELETE_LINKED_SALES') {
+        const { error: deleteSalesError } = await supabase
+            .from('sales')
+            .delete()
+            .in('id', linkedSaleIds);
+        if (deleteSalesError) throw deleteSalesError;
+    }
+
     const { error } = await supabase.from('products').delete().eq('id', id);
     if (error) throw error;
 }

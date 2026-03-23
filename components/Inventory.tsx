@@ -19,6 +19,7 @@ const ConfirmDialog: React.FC<{
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  confirmLabel?: string;
 }> = ({ title, message, onConfirm, onCancel }) => (
   <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onCancel}>
     <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -58,7 +59,7 @@ interface VariationRow {
 const Inventory: React.FC = () => {
   const {
     products, categories, brands, stockHistory, currentBranch, branches,
-    addProduct, updateProduct, deleteProduct, adjustStock, transferStock,
+    addProduct, updateProduct, deleteProduct, getProductSalesUsage, adjustStock, transferStock,
     addCategory, removeCategory, addBrand, removeBrand,
     currentUser, stockTransfers, settings
   } = useStore();
@@ -85,7 +86,8 @@ const Inventory: React.FC = () => {
   const [adjustmentReason, setAdjustmentReason] = useState('');
 
   // Delete confirmation state
-  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string; linkedSalesCount: number } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   // Stock Transfer State
   const [transferItems, setTransferItems] = useState<StockTransferItem[]>([]);
@@ -243,15 +245,34 @@ const Inventory: React.FC = () => {
   };
 
   // 5. Delete with confirmation popup
-  const handleDeleteRequest = (product: Product) => {
-    setDeleteConfirm({ id: product.id, name: product.name });
+  const handleDeleteRequest = async (product: Product) => {
+    const linkedSalesCount = await getProductSalesUsage(product.id);
+    setDeleteConfirm({ id: product.id, name: product.name, linkedSalesCount });
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (deleteConfirm) {
-      deleteProduct(deleteConfirm.id);
-      setDeleteConfirm(null);
+      setDeleteBusy(true);
+      const deleted = await deleteProduct(deleteConfirm.id, 'BLOCK_IF_LINKED');
+      setDeleteBusy(false);
+      if (deleted) setDeleteConfirm(null);
     }
+  };
+
+  const handleDeleteKeepSales = async () => {
+    if (!deleteConfirm) return;
+    setDeleteBusy(true);
+    const deleted = await deleteProduct(deleteConfirm.id, 'KEEP_SALES_SNAPSHOT');
+    setDeleteBusy(false);
+    if (deleted) setDeleteConfirm(null);
+  };
+
+  const handleDeleteWithSales = async () => {
+    if (!deleteConfirm) return;
+    setDeleteBusy(true);
+    const deleted = await deleteProduct(deleteConfirm.id, 'DELETE_LINKED_SALES');
+    setDeleteBusy(false);
+    if (deleted) setDeleteConfirm(null);
   };
 
   // --- Stock Transfer Handlers ---
@@ -1783,13 +1804,60 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
       )}
 
       {/* 5. Delete Confirmation Popup */}
-      {deleteConfirm && (
+      {deleteConfirm && deleteConfirm.linkedSalesCount === 0 && (
         <ConfirmDialog
           title="Delete Product"
           message={`Are you sure you want to delete "${deleteConfirm.name}"? This action cannot be undone.`}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteConfirm(null)}
         />
+      )}
+
+      {deleteConfirm && deleteConfirm.linkedSalesCount > 0 && (
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => !deleteBusy && setDeleteConfirm(null)}>
+          <div className="bg-white rounded-xl w-full max-w-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 flex items-start gap-3 bg-amber-50 border-b border-amber-100">
+              <div className="p-2 rounded-full bg-amber-100 text-amber-700">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-bold text-sm text-amber-900">This product has sales history</h4>
+                <p className="text-sm text-slate-700 mt-1">
+                  "{deleteConfirm.name}" is used in {deleteConfirm.linkedSalesCount} sale record{deleteConfirm.linkedSalesCount === 1 ? '' : 's'}.
+                  Choose how to continue.
+                </p>
+              </div>
+            </div>
+            <div className="p-4 space-y-3 bg-white">
+              <button
+                disabled={deleteBusy}
+                onClick={handleDeleteKeepSales}
+                className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+              >
+                <p className="font-semibold text-slate-900">Keep sale records, delete product only</p>
+                <p className="text-xs text-slate-600 mt-1">Sales keep product snapshot fields like name, price, and cost.</p>
+              </button>
+
+              <button
+                disabled={deleteBusy}
+                onClick={handleDeleteWithSales}
+                className="w-full text-left p-3 rounded-lg border border-red-200 hover:border-red-300 hover:bg-red-50 disabled:opacity-60"
+              >
+                <p className="font-semibold text-red-700">Delete product and related sales records</p>
+                <p className="text-xs text-red-600 mt-1">Warning: this removes all sales that include this product.</p>
+              </button>
+            </div>
+            <div className="p-3 flex justify-end bg-white border-t border-slate-100">
+              <button
+                disabled={deleteBusy}
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+              >
+                {deleteBusy ? 'Working...' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
