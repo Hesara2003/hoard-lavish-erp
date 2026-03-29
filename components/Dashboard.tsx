@@ -5,6 +5,7 @@ import { useStore } from '../context/StoreContext';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { CartItem, SalesRecord } from '../types';
+import { parseBusinessDate } from '../utils/dateTime';
 
 type FilterMode = 'daily' | 'monthly';
 
@@ -186,17 +187,17 @@ const Dashboard: React.FC = () => {
         category: 'Exchange'
       }))
     ];
-    return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return all.sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime());
   }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredTransfers, filteredExchanges]);
 
   // --- Recent Sales (today, current branch — editable within 10 min) ---
   const TEN_MIN = 10 * 60 * 1000;
-  const isSaleEditable = (sale: SalesRecord) => Date.now() - new Date(sale.date).getTime() <= TEN_MIN;
+  const isSaleEditable = (sale: SalesRecord) => Date.now() - parseBusinessDate(sale.date).getTime() <= TEN_MIN;
   const recentEditableSales = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     return salesHistory
       .filter(s => s.branchId === currentBranch.id && s.date.startsWith(todayStr))
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime())
       .slice(0, 20);
   }, [salesHistory, currentBranch.id]);
 
@@ -263,7 +264,7 @@ const Dashboard: React.FC = () => {
     });
 
     // Sort by date descending
-    items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    items.sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime());
     return items.slice(0, 20);
   }, [salesHistory, stockHistory]);
 
@@ -284,7 +285,7 @@ const Dashboard: React.FC = () => {
   });
 
   const timeAgo = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = Date.now() - parseBusinessDate(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'Just now';
     if (mins < 60) return `${mins}m ago`;
@@ -300,12 +301,15 @@ const Dashboard: React.FC = () => {
     // Payment method breakdown
     const cashSales    = filteredSales.filter(s => s.paymentMethod === 'Cash');
     const cardSales    = filteredSales.filter(s => s.paymentMethod === 'Card');
+    const splitSales   = filteredSales.filter(s => s.paymentMethod === 'Cash+Card');
     const payhereS     = filteredSales.filter(s => s.paymentMethod === 'PayHere');
     const onlineS      = filteredSales.filter(s => s.paymentMethod === 'Online Transfer');
     const mintpayS     = filteredSales.filter(s => s.paymentMethod === 'MintPay');
 
-    const cashTotal    = cashSales.reduce((s, x) => s + x.totalAmount, 0);
-    const cardTotal    = cardSales.reduce((s, x) => s + x.totalAmount, 0);
+    const splitCashTotal = splitSales.reduce((s, x) => s + (x.cashAmount || 0), 0);
+    const splitCardTotal = splitSales.reduce((s, x) => s + (x.cardAmount || 0), 0);
+    const cashTotal    = cashSales.reduce((s, x) => s + x.totalAmount, 0) + splitCashTotal;
+    const cardTotal    = cardSales.reduce((s, x) => s + x.totalAmount, 0) + splitCardTotal;
     const payhereTotal  = payhereS.reduce((s, x) => s + x.totalAmount, 0);
     const onlineTotal  = onlineS.reduce((s, x) => s + x.totalAmount, 0);
     const mintpayTotal = mintpayS.reduce((s, x) => s + x.totalAmount, 0);
@@ -362,16 +366,18 @@ const Dashboard: React.FC = () => {
     doc.line(14, 65, pageWidth - 14, 65);
 
     const salesBreakdown: (string | number)[][] = [];
-    salesBreakdown.push(['Cash Sales', fmtCurrency(cashTotal), `${cashSales.length} transaction${cashSales.length !== 1 ? 's' : ''}`]);
+    const cashSubLabel = splitCashTotal > 0 ? `(${fmtCurrency(cashSales.reduce((s, x) => s + x.totalAmount, 0))} direct + ${fmtCurrency(splitCashTotal)} from split)` : '—';
+    const cashCount = cashSales.length + splitSales.length;
+    salesBreakdown.push([`Cash Sales ${cashSubLabel}`, fmtCurrency(cashTotal), `${cashCount} transaction${cashCount !== 1 ? 's' : ''}`]);
 
     // Card total row
     const cardSubParts: string[] = [];
-    if (cardTotal > 0)    cardSubParts.push(`Card: ${fmtCurrency(cardTotal)}`);
+    if (cardTotal > 0)    cardSubParts.push(`Card incl. split: ${fmtCurrency(cardTotal)}`);
     if (payhereTotal > 0) cardSubParts.push(`PayHere: ${fmtCurrency(payhereTotal)}`);
     if (onlineTotal > 0)  cardSubParts.push(`Online Transfer: ${fmtCurrency(onlineTotal)}`);
     if (mintpayTotal > 0) cardSubParts.push(`MintPay: ${fmtCurrency(mintpayTotal)}`);
     const cardSubLabel = cardSubParts.length > 0 ? `(${cardSubParts.join('  |  ')})` : '—';
-    const allCardCount = cardSales.length + payhereS.length + onlineS.length + mintpayS.length;
+    const allCardCount = cardSales.length + splitSales.length + payhereS.length + onlineS.length + mintpayS.length;
     salesBreakdown.push([`Card Sales  ${cardSubLabel}`, fmtCurrency(allCardTotal), `${allCardCount} transaction${allCardCount !== 1 ? 's' : ''}`]);
 
     if (exchangeNet !== 0) {
@@ -406,10 +412,10 @@ const Dashboard: React.FC = () => {
 
     const expenseRows: (string | number)[][] = [];
     filteredExpenses.forEach(e => {
-      expenseRows.push([new Date(e.date).toLocaleDateString(), e.category, e.description, fmtCurrency(e.amount)]);
+      expenseRows.push([parseBusinessDate(e.date).toLocaleDateString(), e.category, e.description, fmtCurrency(e.amount)]);
     });
     filteredSupplierTx.forEach(t => {
-      expenseRows.push([new Date(t.date).toLocaleDateString(), 'Supplier Payment', t.supplierName + (t.reference ? ` — ${t.reference}` : ''), fmtCurrency(t.amount)]);
+      expenseRows.push([parseBusinessDate(t.date).toLocaleDateString(), 'Supplier Payment', t.supplierName + (t.reference ? ` — ${t.reference}` : ''), fmtCurrency(t.amount)]);
     });
 
     let afterExpensesY: number;
@@ -500,7 +506,7 @@ const Dashboard: React.FC = () => {
       doc.line(14, afterPerfY + 3, pageWidth - 14, afterPerfY + 3);
 
       const ledgerRows = ledger.map(item => [
-        new Date(item.date).toLocaleDateString(),
+        parseBusinessDate(item.date).toLocaleDateString(),
         item.type === 'OUT' ? '-' + fmtCurrency(item.amount) : '+' + fmtCurrency(item.amount),
         item.category,
         item.desc,
@@ -753,7 +759,7 @@ const Dashboard: React.FC = () => {
                             {filteredSales.map(sale => (
                               <tr key={sale.id} className="hover:bg-slate-50">
                                 <td className="p-3 font-medium text-slate-900">#{sale.invoiceNumber}</td>
-                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(sale.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{parseBusinessDate(sale.date).toLocaleDateString()}</td>
                                 <td className="p-3 text-slate-600 text-xs">{sale.customerName || 'Walk-in Customer'}</td>
                                 <td className="p-3 text-right font-bold text-emerald-600">+{fmtCurrency(sale.totalAmount)}</td>
                               </tr>
@@ -789,7 +795,7 @@ const Dashboard: React.FC = () => {
                             {filteredExchanges.filter(e => e.difference > 0).map(ex => (
                               <tr key={ex.id} className="hover:bg-slate-50">
                                 <td className="p-3 font-medium text-slate-900">{ex.exchangeNumber}</td>
-                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(ex.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{parseBusinessDate(ex.date).toLocaleDateString()}</td>
                                 <td className="p-3 text-slate-600 text-xs">{ex.description || 'Product exchange'}</td>
                                 <td className="p-3 text-right font-bold text-emerald-600">+{fmtCurrency(ex.difference)}</td>
                               </tr>
@@ -843,7 +849,7 @@ const Dashboard: React.FC = () => {
                             {filteredSales.map(sale => (
                               <tr key={sale.id} className="hover:bg-slate-50">
                                 <td className="p-3 font-medium text-slate-900">#{sale.invoiceNumber}</td>
-                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(sale.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{parseBusinessDate(sale.date).toLocaleDateString()}</td>
                                 <td className="p-3 text-slate-600 text-xs">{sale.items.length} items</td>
                                 <td className="p-3 text-right font-bold text-rose-600">-{fmtCurrency(sale.totalCost || 0)}</td>
                               </tr>
@@ -879,7 +885,7 @@ const Dashboard: React.FC = () => {
                             {filteredExpenses.map(expense => (
                               <tr key={expense.id} className="hover:bg-slate-50">
                                 <td className="p-3 font-medium text-slate-900">{expense.description}</td>
-                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(expense.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{parseBusinessDate(expense.date).toLocaleDateString()}</td>
                                 <td className="p-3">
                                   <span className="bg-slate-100 px-2 py-1 rounded text-xs font-medium text-slate-600">{expense.category}</span>
                                 </td>
@@ -917,7 +923,7 @@ const Dashboard: React.FC = () => {
                             {filteredSupplierTx.map(tx => (
                               <tr key={tx.id} className="hover:bg-slate-50">
                                 <td className="p-3 font-medium text-slate-900">{tx.supplierName}</td>
-                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{new Date(tx.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{parseBusinessDate(tx.date).toLocaleDateString()}</td>
                                 <td className="p-3 text-slate-600 text-xs">{tx.reference || 'Payment'}</td>
                                 <td className="p-3 text-right font-bold text-rose-600">-{fmtCurrency(tx.amount)}</td>
                               </tr>
@@ -1373,7 +1379,7 @@ const Dashboard: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {ledger.slice(0, 15).map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50">
-                    <td className="p-4 text-slate-500 whitespace-nowrap">{new Date(item.date).toLocaleDateString()}</td>
+                    <td className="p-4 text-slate-500 whitespace-nowrap">{parseBusinessDate(item.date).toLocaleDateString()}</td>
                     <td className="p-4 font-medium text-slate-900">{item.desc}</td>
                     <td className="p-4">
                       <span className="bg-slate-100 px-2 py-1 rounded text-xs font-medium text-slate-600">{item.category}</span>
@@ -1438,7 +1444,7 @@ const Dashboard: React.FC = () => {
                   <tr key={sale.id} className={`hover:bg-slate-50 ${!editable ? 'opacity-50' : ''}`}>
                     <td className="p-4 font-medium text-slate-900">#{sale.invoiceNumber}</td>
                     <td className="p-4 text-slate-500 text-xs">
-                      {new Date(sale.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {parseBusinessDate(sale.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       {!editable && <span className="ml-1.5 text-rose-400 font-medium">Expired</span>}
                     </td>
                     <td className="p-4 text-slate-600">{sale.customerName || 'Walk-in'}</td>

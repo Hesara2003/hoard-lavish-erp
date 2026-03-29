@@ -31,7 +31,7 @@ interface StoreContextType {
 
   // Actions
   setBranch: (branchId: string) => void;
-  addBranch: (branch: Branch) => void;
+  addBranch: (branch: Omit<Branch, 'id'> & { id?: string }) => void;
   updateBranch: (id: string, updates: Partial<Branch>) => void;
 
   addProduct: (product: Product) => void;
@@ -49,7 +49,12 @@ interface StoreContextType {
   updateCartQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
 
-  completeSale: (paymentMethod: SalesRecord['paymentMethod'], discount: number, customerId?: string) => SalesRecord;
+  completeSale: (
+    paymentMethod: SalesRecord['paymentMethod'],
+    discount: number,
+    customerId?: string,
+    paymentBreakdown?: { cashAmount?: number; cardAmount?: number }
+  ) => SalesRecord;
   updateSale: (saleId: string, updatedItems: CartItem[], discount: number, customerId?: string) => SalesRecord;
   deleteSale: (saleId: string) => void;
   completeExchange: (exchange: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>) => ExchangeRecord;
@@ -100,6 +105,107 @@ const isSupabaseConfigured = (): boolean => {
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
   return !!(url && key && url !== 'YOUR_SUPABASE_URL' && key !== 'YOUR_SUPABASE_ANON_KEY');
 };
+
+type DbLikeError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+  error_description?: string;
+};
+
+const isLikelyConnectivityIssue = (err: unknown): boolean => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+
+  if (err instanceof Error) {
+    const msg = (err.message || '').toLowerCase();
+    if (
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('network request failed') ||
+      msg.includes('fetch failed') ||
+      msg.includes('timed out') ||
+      msg.includes('timeout') ||
+      msg.includes('connection') ||
+      msg.includes('offline')
+    ) {
+      return true;
+    }
+  }
+
+  if (err && typeof err === 'object') {
+    const dbErr = err as DbLikeError;
+    const msg = `${dbErr.message || ''} ${dbErr.error_description || ''}`.toLowerCase();
+    if (
+      msg.includes('failed to fetch') ||
+      msg.includes('network') ||
+      msg.includes('timed out') ||
+      msg.includes('timeout') ||
+      msg.includes('connection') ||
+      msg.includes('offline')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const extractDbErrorMessage = (
+  err: unknown,
+  fallback = 'Database operation failed',
+  operation: 'checkout' | 'general' = 'general'
+): string => {
+  if (isLikelyConnectivityIssue(err)) {
+    return operation === 'checkout'
+      ? 'Checkout failed due to an internet connection issue. Please check your connection and try again.'
+      : 'Database request failed due to an internet connection issue. Please check your connection and try again.';
+  }
+
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object') {
+    const dbErr = err as DbLikeError;
+    const code = dbErr.code || '';
+    const message = dbErr.message || dbErr.error_description || '';
+    const details = dbErr.details || '';
+    const hint = dbErr.hint || '';
+
+    if (code === '23503') {
+      if ((message + details).toLowerCase().includes('product_branch_stock')) {
+        return operation === 'checkout'
+          ? 'Checkout failed because related stock data is missing or invalid (not an internet connection issue).'
+          : 'Cannot add product stock for one or more branches. Please sync branches and try again (not an internet connection issue).';
+      }
+      return operation === 'checkout'
+        ? 'Checkout failed because related data is missing or invalid (not an internet connection issue).'
+        : 'This action failed because related data is missing or invalid (not an internet connection issue).';
+    }
+    if (code === '22P02') {
+      return operation === 'checkout'
+        ? 'Checkout failed because invalid data format was sent to the database (not an internet connection issue).'
+        : 'Invalid value format was sent to the database (not an internet connection issue).';
+    }
+    if (code === '23505') return 'A record with the same value already exists (not an internet connection issue).';
+    if (code === '42501') return 'Permission denied for this database action (not an internet connection issue).';
+    if (code === '23502') return 'A required field is missing for this database action (not an internet connection issue).';
+
+    if (message) {
+      const parts = [message];
+      if (details) parts.push(details);
+      if (hint) parts.push(`Hint: ${hint}`);
+      const merged = parts.join(' - ');
+      return operation === 'checkout'
+        ? `Checkout failed (not an internet connection issue): ${merged}`
+        : `${merged} (not an internet connection issue).`;
+    }
+  }
+  return operation === 'checkout'
+    ? `${fallback} (not an internet connection issue).`
+    : `${fallback} (not an internet connection issue).`;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (value: string): boolean => UUID_PATTERN.test(value);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [branches, setBranches] = useState<Branch[]>(INITIAL_BRANCHES);
@@ -167,7 +273,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Load from Supabase
     const loadAll = async () => {
       setIsLoading(true);
-      setDbError(null);
       try {
         const [
           branchesData,
@@ -245,7 +350,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setLastSyncTime(new Date());
       } catch (err: unknown) {
         console.error('Failed to load data from Supabase', err);
-        setDbError(err instanceof Error ? err.message : 'Failed to load data');
+        setDbError(extractDbErrorMessage(err, 'Failed to load data', 'general'));
         setIsCloudConnected(false);
       } finally {
         setIsLoading(false);
@@ -304,11 +409,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (stockTransfersData.length > 0) setStockTransfers(stockTransfersData);
       setLastSyncTime(new Date());
       setIsCloudConnected(true);
-      setDbError(null);
       return { success: true, productCount: productsData.length };
     } catch (err: unknown) {
       console.error('Failed to refresh data from Supabase', err);
-      const errorMsg = err instanceof Error ? err.message : 'Failed to sync with cloud database';
+      const errorMsg = extractDbErrorMessage(err, 'Failed to sync with cloud database', 'general');
       setDbError(errorMsg);
       setIsCloudConnected(false);
       return { success: false, error: errorMsg };
@@ -414,13 +518,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [hasLoaded, useSupabase, branches, salesHistory, customers, products, categories, brands, stockHistory, stockTransfers, exchangeHistory, suppliers, supplierTransactions, expenses, users, settings, damagedGoods]);
 
   // ---- Helper for async DB calls with error handling ----
-  const dbCall = useCallback(async (fn: () => Promise<unknown>) => {
+  const dbCall = useCallback(async (
+    fn: () => Promise<unknown>,
+    options?: { fallback?: string; operation?: 'checkout' | 'general' }
+  ) => {
     if (!useSupabase) return;
     try {
       await fn();
     } catch (err: unknown) {
       console.error('Supabase operation failed:', err);
-      setDbError(err instanceof Error ? err.message : 'Database operation failed');
+      setDbError(extractDbErrorMessage(err, options?.fallback, options?.operation || 'general'));
     }
   }, [useSupabase]);
 
@@ -435,16 +542,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const addBranch = (branch: Branch) => {
-    setBranches(prev => [...prev, branch]);
-    setProducts(prev => prev.map(p => ({
-      ...p,
-      branchStock: { ...p.branchStock, [branch.id]: 0 }
-    })));
-    dbCall(async () => {
-      await db.insertBranch(branch);
-      await db.initializeBranchStock(branch.id, products.map(p => p.id));
-    });
+  const addBranch = (branchInput: Omit<Branch, 'id'> & { id?: string }) => {
+    if (!useSupabase) {
+      const localBranch: Branch = {
+        ...branchInput,
+        id: branchInput.id || Math.random().toString(36).substr(2, 9),
+      };
+      setBranches(prev => [...prev, localBranch]);
+      setProducts(prev => prev.map(p => ({
+        ...p,
+        branchStock: { ...p.branchStock, [localBranch.id]: 0 }
+      })));
+      return;
+    }
+
+    void (async () => {
+      try {
+        const savedBranch = await db.insertBranch(branchInput);
+        setBranches(prev => [...prev, savedBranch]);
+        setProducts(prev => prev.map(p => ({
+          ...p,
+          branchStock: { ...p.branchStock, [savedBranch.id]: 0 }
+        })));
+        await db.initializeBranchStock(savedBranch.id, products.map(p => p.id));
+      } catch (err: unknown) {
+        console.error('Failed to add branch:', err);
+        setDbError(extractDbErrorMessage(err, 'Failed to add branch'));
+      }
+    })();
   };
 
   const updateBranch = (id: string, updates: Partial<Branch>) => {
@@ -465,8 +590,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     const totalStock = Object.values(branchStock).reduce((a, b) => a + b, 0);
     const fullProduct = { ...product, branchStock, stock: totalStock };
-    setProducts(prev => [...prev, fullProduct]);
-    dbCall(() => db.insertProduct(fullProduct, branches));
+
+    if (!useSupabase) {
+      setProducts(prev => [...prev, fullProduct]);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const savedProduct = await db.insertProduct(fullProduct, branches);
+        setProducts(prev => [...prev, savedProduct]);
+      } catch (err: unknown) {
+        console.error('Failed to add product:', err);
+        setDbError(extractDbErrorMessage(err, 'Failed to add product'));
+      }
+    })();
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
@@ -508,7 +646,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return await db.getProductLinkedSalesCount(id);
     } catch (err: unknown) {
       console.error('Failed to check product sales usage:', err);
-      setDbError(err instanceof Error ? err.message : 'Failed to check product sales usage');
+      setDbError(extractDbErrorMessage(err, 'Failed to check product sales usage'));
       return 0;
     }
   };
@@ -525,11 +663,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!syncResult.success) {
         setProducts(prev => prev.filter(p => p.id !== id));
       }
-      setDbError(null);
       return true;
     } catch (err: unknown) {
       console.error('Failed to delete product:', err);
-      setDbError(err instanceof Error ? err.message : 'Failed to delete product');
+      setDbError(extractDbErrorMessage(err, 'Failed to delete product'));
       return false;
     }
   };
@@ -538,9 +675,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // CUSTOMER ACTIONS
   // ============================================================
   const addCustomer = (customer: Customer) => {
+    const tempId = customer.id;
     setCustomers(prev => [...prev, customer]);
     dbCall(async () => {
-      await db.insertCustomer(customer);
+      const savedCustomer = await db.insertCustomer(customer);
+      setCustomers(prev => prev.map(c => c.id === tempId ? savedCustomer : c));
     });
   };
 
@@ -610,7 +749,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   // SALE COMPLETION
   // ============================================================
-  const completeSale = (paymentMethod: SalesRecord['paymentMethod'], discount: number, customerId?: string): SalesRecord => {
+  const completeSale = (
+    paymentMethod: SalesRecord['paymentMethod'],
+    discount: number,
+    customerId?: string,
+    paymentBreakdown?: { cashAmount?: number; cardAmount?: number }
+  ): SalesRecord => {
     const { subtotal, tax, total, totalCost, discount: effDiscount } = calculateCartTotals(cart, discount, 0);
 
     const customer = customers.find(c => c.id === customerId);
@@ -630,6 +774,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       totalAmount: total,
       totalCost,
       paymentMethod,
+      cashAmount: paymentMethod === 'Cash+Card' ? Math.max(0, paymentBreakdown?.cashAmount ?? 0) : undefined,
+      cardAmount: paymentMethod === 'Cash+Card' ? Math.max(0, paymentBreakdown?.cardAmount ?? 0) : undefined,
       customerId,
       customerName: customer ? customer.name : undefined,
       branchId: currentBranch.id,
@@ -677,7 +823,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     clearCart();
 
     // Persist to Supabase (the RPC handles everything atomically)
-    dbCall(() => db.completeSaleRPC(newSale));
+    dbCall(() => db.completeSaleRPC(newSale), { fallback: 'Checkout failed', operation: 'checkout' });
 
     return newSale;
   };
@@ -785,7 +931,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSalesHistory(prev => prev.map(s => s.id === saleId ? updatedSale : s));
 
     // Persist to Supabase
-    dbCall(() => db.completeSaleRPC(updatedSale)); // Reuse the same RPC (it will update if exists)
+    dbCall(() => db.completeSaleRPC(updatedSale), { fallback: 'Checkout update failed', operation: 'checkout' }); // Reuse the same RPC (it will update if exists)
 
     return updatedSale;
   };
@@ -834,6 +980,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setStockHistory(prev => [...newStockLogs, ...prev]);
     setProducts(newProducts);
     setSalesHistory(prev => prev.filter(s => s.id !== saleId));
+
+    if (useSupabase) {
+      dbCall(async () => {
+        await db.voidSaleRPC(saleId);
+        await refreshFromSupabase();
+      });
+    }
   };
 
   // ============================================================
@@ -1108,12 +1261,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // EXPENSE ACTIONS
   // ============================================================
   const addExpense = (expense: Expense) => {
-    setExpenses(prev => [expense, ...prev]);
-    dbCall(() => db.insertExpense(expense));
+    const tempId = expense.id || `tmp-${Date.now()}`;
+    const optimisticExpense: Expense = { ...expense, id: tempId };
+    setExpenses(prev => [optimisticExpense, ...prev]);
+
+    dbCall(async () => {
+      const inserted = await db.insertExpense(expense);
+      setExpenses(prev => prev.map(e => (e.id === tempId ? inserted : e)));
+    });
   };
 
   const deleteExpense = (id: string) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
+
+    // Some local/optimistic records can have temporary non-UUID ids.
+    // Skip remote delete for those to avoid PostgreSQL UUID format errors.
+    if (!isUuid(id)) return;
+
     dbCall(() => db.deleteExpense(id));
   };
 

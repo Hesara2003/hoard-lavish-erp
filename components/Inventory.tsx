@@ -3,6 +3,7 @@ import { Plus, Edit2, AlertCircle, Trash2, Search, Filter, History, Box, Tag, Ar
 import { useStore } from '../context/StoreContext';
 import { Product, StockTransferItem, StockTransfer } from '../types';
 import JsBarcode from 'jsbarcode';
+import { parseBusinessDate } from '../utils/dateTime';
 
 type InventoryTab = 'ALL' | 'LOW_STOCK' | 'ADJUSTMENTS' | 'CATEGORIES' | 'TRANSFERS';
 
@@ -74,6 +75,15 @@ const Inventory: React.FC = () => {
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
   const [labelPrintQty, setLabelPrintQty] = useState<number>(1);
+  const [variationPrintConfirm, setVariationPrintConfirm] = useState<{
+    idx: number;
+    name: string;
+    barcode: string;
+    price: number;
+    size: string;
+    color: string;
+    qty: number;
+  } | null>(null);
 
   // Variation builder state (for new products)
   const [useVariations, setUseVariations] = useState(false);
@@ -358,7 +368,7 @@ const Inventory: React.FC = () => {
     </div>
     <div>
       <div class="transfer-number">${transfer.transferNumber}</div>
-      <div class="transfer-date">${new Date(transfer.date).toLocaleString()}</div>
+      <div class="transfer-date">${parseBusinessDate(transfer.date).toLocaleString()}</div>
       <div style="text-align:right;margin-top:6px"><span class="status">${transfer.status}</span></div>
     </div>
   </div>
@@ -453,16 +463,18 @@ const Inventory: React.FC = () => {
     return code + checkDigit.toString();
   };
 
-  const handlePrintBarcode = async () => {
-    if (!editingProduct) return;
-    const barcode = editingProduct.barcode || '';
-    const name = editingProduct.name || 'Product';
-    const price = Number(editingProduct.price) || 0;
-    const size = editingProduct.size || '';
-    const color = editingProduct.color || '';
+  const printBarcodeLabels = async (payload: {
+    barcode: string;
+    name: string;
+    price: number;
+    size: string;
+    color: string;
+    qty: number;
+  }) => {
+    const { barcode, name, price, size, color } = payload;
     if (!barcode) return;
 
-    const qty = Math.max(1, labelPrintQty || 1);
+    const qty = Math.max(1, payload.qty || 1);
     const isElectron = !!(window as any).electronAPI?.printReceipt;
 
     // Generate a real barcode SVG using JsBarcode (Code128 format — universally scannable)
@@ -589,6 +601,45 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
       w.document.write(html);
       w.document.close();
     }
+  };
+
+  const handlePrintBarcode = async () => {
+    if (!editingProduct) return;
+    await printBarcodeLabels({
+      barcode: editingProduct.barcode || '',
+      name: editingProduct.name || 'Product',
+      price: Number(editingProduct.price) || 0,
+      size: editingProduct.size || '',
+      color: editingProduct.color || '',
+      qty: Math.max(1, labelPrintQty || 1),
+    });
+  };
+
+  const openVariationPrintConfirm = (idx: number, v: VariationRow) => {
+    const baseName = (editingProduct?.name || 'Product').trim();
+    const variantName = `${baseName} — ${v.color} / ${v.size}`;
+    setVariationPrintConfirm({
+      idx,
+      name: variantName,
+      barcode: v.barcode || '',
+      price: Number(v.price) || 0,
+      size: v.size || '',
+      color: v.color || '',
+      qty: Math.max(1, Number(v.quantity) || 1),
+    });
+  };
+
+  const handleConfirmVariationPrint = async () => {
+    if (!variationPrintConfirm) return;
+    await printBarcodeLabels({
+      barcode: variationPrintConfirm.barcode,
+      name: variationPrintConfirm.name,
+      price: variationPrintConfirm.price,
+      size: variationPrintConfirm.size,
+      color: variationPrintConfirm.color,
+      qty: Math.max(1, Number(variationPrintConfirm.qty) || 1),
+    });
+    setVariationPrintConfirm(null);
   };
 
   // Tab button component
@@ -819,7 +870,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                 {stockHistory.filter(h => h.branchId === currentBranch.id).map(log => (
                   <tr key={log.id} className="hover:bg-slate-50">
                     <td className="p-4 text-slate-500 whitespace-nowrap">
-                      {new Date(log.date).toLocaleString()}
+                      {parseBusinessDate(log.date).toLocaleString()}
                     </td>
                     <td className="p-4 font-medium text-slate-900">{log.productName}</td>
                     <td className="p-4 text-slate-600 text-xs">{log.branchName}</td>
@@ -1097,7 +1148,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                         .filter(t => t.fromBranchId === currentBranch.id || t.toBranchId === currentBranch.id)
                         .map(t => (
                         <tr key={t.id} className="hover:bg-slate-50">
-                          <td className="p-4 text-slate-500 whitespace-nowrap">{new Date(t.date).toLocaleString()}</td>
+                          <td className="p-4 text-slate-500 whitespace-nowrap">{parseBusinessDate(t.date).toLocaleString()}</td>
                           <td className="p-4 font-mono text-xs font-bold text-indigo-600">{t.transferNumber}</td>
                           <td className="p-4 text-slate-700">{t.fromBranchName}</td>
                           <td className="p-4 text-slate-700">{t.toBranchName}</td>
@@ -1682,6 +1733,15 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                                 >
                                   Gen
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openVariationPrintConfirm(idx, v)}
+                                  disabled={!v.barcode}
+                                  className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-[10px] font-medium hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                                  title="Print Barcode 1 labels"
+                                >
+                                  <Printer size={11} /> Print
+                                </button>
                               </div>
                               <div className="col-span-6 flex gap-1">
                                 <input
@@ -1854,6 +1914,52 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                 className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60"
               >
                 {deleteBusy ? 'Working...' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {variationPrintConfirm && (
+        <div className="fixed inset-0 bg-black/40 z-[65] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setVariationPrintConfirm(null)}>
+          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 flex items-center gap-3 bg-slate-50 border-b border-slate-100">
+              <div className="p-2 rounded-full bg-slate-200 text-slate-700">
+                <Printer size={18} />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-bold text-sm text-slate-900">Confirm Sticker Print</h4>
+                <p className="text-xs text-slate-600 mt-0.5">{variationPrintConfirm.name}</p>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-xs text-slate-500">
+                Barcode: <span className="font-mono text-slate-800">{variationPrintConfirm.barcode}</span>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stickers To Print</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full p-2 border border-slate-200 rounded-lg outline-none"
+                  value={variationPrintConfirm.qty}
+                  onChange={e => setVariationPrintConfirm(prev => prev ? { ...prev, qty: Math.max(1, Number(e.target.value) || 1) } : prev)}
+                />
+                <p className="text-[11px] text-slate-500 mt-1">Default is this variation QTY.</p>
+              </div>
+            </div>
+            <div className="p-3 flex justify-end gap-2 bg-white border-t border-slate-100">
+              <button
+                onClick={() => setVariationPrintConfirm(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmVariationPrint}
+                className="px-5 py-2 rounded-lg text-white text-sm font-medium bg-slate-900 hover:bg-black"
+              >
+                Confirm Print ({Math.max(1, Number(variationPrintConfirm.qty) || 1)})
               </button>
             </div>
           </div>

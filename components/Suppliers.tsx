@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Truck, Plus, Phone, Mail, MapPin, Edit2, Trash2, X, Calendar, FileText, Search, Package, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Supplier, SupplierTransaction, DamagedGood } from '../types';
+import { parseBusinessDate } from '../utils/dateTime';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -498,7 +499,7 @@ const Suppliers: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredTransactions.map(t => (
                   <tr key={t.id} className="hover:bg-slate-50">
-                    <td className="p-4 text-slate-500">{new Date(t.date).toLocaleDateString()}</td>
+                    <td className="p-4 text-slate-500">{parseBusinessDate(t.date).toLocaleDateString()}</td>
                     <td className="p-4 font-medium text-slate-900">{t.supplierName}</td>
                     <td className="p-4 text-slate-600 font-mono">{t.reference || '-'}</td>
                     <td className="p-4 font-bold text-slate-900">{fmtCurrency(t.amount)}</td>
@@ -639,7 +640,7 @@ const Suppliers: React.FC = () => {
                   <tbody className="divide-y divide-slate-100">
                     {damagedGoods.map(d => (
                       <tr key={d.id} className="hover:bg-slate-50">
-                        <td className="p-4 text-slate-500 whitespace-nowrap">{new Date(d.date).toLocaleDateString()}</td>
+                        <td className="p-4 text-slate-500 whitespace-nowrap">{parseBusinessDate(d.date).toLocaleDateString()}</td>
                         <td className="p-4 font-medium text-slate-900">{d.productName}</td>
                         <td className="p-4 text-slate-600">{d.supplierName}</td>
                         <td className="p-4 text-center font-mono">{d.quantity}</td>

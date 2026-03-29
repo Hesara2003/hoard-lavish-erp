@@ -14,9 +14,12 @@ const Branches: React.FC = () => {
         updateBranch(editingBranch.id, editingBranch);
       } else {
         addBranch({
-          ...editingBranch,
-          id: Math.random().toString(36).substr(2, 9),
-        } as Branch);
+          name: editingBranch.name,
+          address: editingBranch.address,
+          phone: editingBranch.phone || '',
+          thermalPrinterName: editingBranch.thermalPrinterName || '',
+          barcodePrinterName: editingBranch.barcodePrinterName || '',
+        });
       }
       setIsModalOpen(false);
       setEditingBranch({});
