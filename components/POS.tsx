@@ -2,9 +2,11 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, Plus, Minus, Trash2, CreditCard, Banknote, UserPlus, User, X, ScanBarcode, Printer, CheckCircle, Store, AlertTriangle, ArrowRightLeft, RotateCcw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product, Customer, SalesRecord, CartItem, ExchangeRecord } from '../types';
+import { parseBusinessDate } from '../utils/dateTime';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+type DiscountMode = 'amount' | 'percentage';
 
 // --- Alert Popup Component ---
 const AlertPopup: React.FC<{ message: string; type?: 'error' | 'warning'; onClose: () => void }> = ({ message, type = 'error', onClose }) => (
@@ -45,10 +47,14 @@ const POS: React.FC = () => {
 
   // Billing States
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [billDiscountMode, setBillDiscountMode] = useState<DiscountMode>('amount');
+  const [billDiscountValue, setBillDiscountValue] = useState<number>(0);
+  const [itemDiscountModes, setItemDiscountModes] = useState<Record<string, DiscountMode>>({});
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay'>('Cash');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay' | 'Cash+Card'>('Cash');
+  const [splitCashAmount, setSplitCashAmount] = useState<number>(0);
+  const [splitCardAmount, setSplitCardAmount] = useState<number>(0);
 
   // Customer search in checkout
   const [customerSearch, setCustomerSearch] = useState('');
@@ -343,7 +349,11 @@ const POS: React.FC = () => {
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const term = searchTerm.toLowerCase();
-      const matchesSearch = !term || p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term);
+      const matchesSearch = !term
+        || p.name.toLowerCase().includes(term)
+        || p.sku.toLowerCase().includes(term)
+        || (p.size && p.size.toLowerCase().includes(term))
+        || (p.color && p.color.toLowerCase().includes(term));
       const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
@@ -355,6 +365,8 @@ const POS: React.FC = () => {
     return products.filter(p =>
       p.sku.toLowerCase().includes(barcodeInput.trim().toLowerCase()) ||
       p.name.toLowerCase().includes(barcodeInput.trim().toLowerCase()) ||
+      (p.size && p.size.toLowerCase().includes(barcodeInput.trim().toLowerCase())) ||
+      (p.color && p.color.toLowerCase().includes(barcodeInput.trim().toLowerCase())) ||
       (p.barcode && p.barcode.toLowerCase().includes(barcodeInput.trim().toLowerCase())) ||
       (p.barcode2 && p.barcode2.toLowerCase().includes(barcodeInput.trim().toLowerCase()))
     ).slice(0, 5);
@@ -403,12 +415,24 @@ const POS: React.FC = () => {
   // Billing Calculations — 4. Remove tax
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const itemDiscountsTotal = cart.reduce((sum, item) => sum + ((item.discount || 0) * item.quantity), 0);
-  const totalDiscount = itemDiscountsTotal + discountAmount;
+  const subtotalAfterItemDiscounts = Math.max(0, subtotal - itemDiscountsTotal);
+  const additionalDiscountAmount = billDiscountMode === 'percentage'
+    ? (subtotalAfterItemDiscounts * billDiscountValue) / 100
+    : billDiscountValue;
+  const totalDiscount = itemDiscountsTotal + additionalDiscountAmount;
   const total = Math.max(0, subtotal - totalDiscount);
+  const splitEnteredTotal = splitCashAmount + splitCardAmount;
+  const splitRemaining = total - splitEnteredTotal;
 
-  // 7. Calculate profit for discount validation
+  useEffect(() => {
+    if (selectedPaymentMethod !== 'Cash+Card') {
+      setSplitCashAmount(0);
+      setSplitCardAmount(0);
+    }
+  }, [selectedPaymentMethod]);
+
+  // 7. Calculate cost baseline for discount warnings
   const totalCost = cart.reduce((sum, item) => sum + (item.costPrice * item.quantity), 0);
-  const maxProfit = subtotal - totalCost;
 
   // Helper: add to cart with popup alert
   const handleAddToCart = (product: Product) => {
@@ -477,45 +501,98 @@ const POS: React.FC = () => {
   };
 
   // 7. Discount validation
-  const handleDiscountChange = (val: number) => {
-    const totalDiscountWithNew = itemDiscountsTotal + val;
-    if (totalDiscountWithNew > maxProfit && maxProfit > 0) {
+  const handleBillDiscountChange = (inputValue: number, mode: DiscountMode = billDiscountMode) => {
+    const sanitizedInput = Math.max(0, Number.isFinite(inputValue) ? inputValue : 0);
+    const rawDiscountAsAmount = mode === 'percentage'
+      ? (subtotalAfterItemDiscounts * sanitizedInput) / 100
+      : sanitizedInput;
+    const maxAdditionalDiscount = Math.max(0, subtotalAfterItemDiscounts);
+    const discountAsAmount = Math.min(rawDiscountAsAmount, maxAdditionalDiscount);
+    const totalDiscountWithNew = itemDiscountsTotal + discountAsAmount;
+    const discountedTotal = Math.max(0, subtotal - totalDiscountWithNew);
+    const normalizedValue = mode === 'percentage'
+      ? (subtotalAfterItemDiscounts > 0 ? (discountAsAmount / subtotalAfterItemDiscounts) * 100 : 0)
+      : discountAsAmount;
+
+    if (discountedTotal < totalCost) {
       setAlertPopup({
-        message: `Total discount (${fmtCurrency(totalDiscountWithNew)}) cannot exceed the profit margin (${fmtCurrency(maxProfit)}). Maximum allowed: ${fmtCurrency(maxProfit - itemDiscountsTotal)}.`,
+        message: `Warning: discounted bill total (${fmtCurrency(discountedTotal)}) is below total cost (${fmtCurrency(totalCost)}).`,
         type: 'warning'
       });
-      setDiscountAmount(Math.max(0, maxProfit - itemDiscountsTotal));
-    } else {
-      setDiscountAmount(val);
     }
+
+    setBillDiscountValue(normalizedValue);
   };
 
-  const handleItemDiscountChange = (productId: string, discount: number) => {
+  const handleBillDiscountModeChange = (mode: DiscountMode) => {
+    if (mode === billDiscountMode) return;
+    const currentAmount = billDiscountMode === 'percentage'
+      ? (subtotalAfterItemDiscounts * billDiscountValue) / 100
+      : billDiscountValue;
+
+    setBillDiscountMode(mode);
+    setBillDiscountValue(mode === 'percentage'
+      ? (subtotalAfterItemDiscounts > 0 ? (currentAmount / subtotalAfterItemDiscounts) * 100 : 0)
+      : currentAmount
+    );
+  };
+
+  const handleItemDiscountChange = (productId: string, inputValue: number, mode: DiscountMode) => {
     const item = cart.find(i => i.id === productId);
     if (!item) return;
 
-    const itemProfit = (item.price - item.costPrice) * item.quantity;
-    const otherItemsDiscounts = cart.reduce((sum, i) => i.id !== productId ? sum + ((i.discount || 0) * i.quantity) : sum, 0);
-    const maxItemDiscount = itemProfit;
+    const sanitizedInput = Math.max(0, Number.isFinite(inputValue) ? inputValue : 0);
+    const rawDiscountPerUnit = mode === 'percentage'
+      ? (item.price * sanitizedInput) / 100
+      : sanitizedInput;
+    const discountPerUnit = Math.min(rawDiscountPerUnit, item.price);
+    const discountedUnitPrice = Math.max(0, item.price - discountPerUnit);
+    const normalizedDiscountPerUnit = Math.max(0, discountPerUnit);
 
-    if (discount * item.quantity > maxItemDiscount) {
+    if (discountedUnitPrice < item.costPrice) {
       setAlertPopup({
-        message: `Discount for ${item.name} cannot exceed its profit margin. Max: ${fmtCurrency(maxItemDiscount / item.quantity)} per unit.`,
+        message: `Warning: ${item.name} discounted price (${fmtCurrency(discountedUnitPrice)}) is below cost price (${fmtCurrency(item.costPrice)}).`,
         type: 'warning'
       });
-      updateCartItemDiscount(productId, Math.max(0, maxItemDiscount / item.quantity));
-    } else {
-      updateCartItemDiscount(productId, discount);
     }
+
+    updateCartItemDiscount(productId, normalizedDiscountPerUnit);
   };
 
   const handleCheckout = () => {
     if (cart.length === 0) return;
-    const sale = completeSale(selectedPaymentMethod, totalDiscount, selectedCustomer?.id);
+
+    if (selectedPaymentMethod === 'Cash+Card') {
+      if (splitCashAmount < 0 || splitCardAmount < 0) {
+        setAlertPopup({ message: 'Cash and card amounts must be zero or more.', type: 'warning' });
+        return;
+      }
+      if (Math.abs((splitCashAmount + splitCardAmount) - total) > 0.01) {
+        setAlertPopup({
+          message: `Cash + Card must equal the bill total (${fmtCurrency(total)}).`,
+          type: 'warning'
+        });
+        return;
+      }
+    }
+
+    const sale = completeSale(
+      selectedPaymentMethod,
+      totalDiscount,
+      selectedCustomer?.id,
+      selectedPaymentMethod === 'Cash+Card'
+        ? { cashAmount: splitCashAmount, cardAmount: splitCardAmount }
+        : undefined
+    );
     setLastSale(sale);
     setIsInvoiceOpen(true);
     setSelectedCustomer(null);
-    setDiscountAmount(0);
+    setBillDiscountMode('amount');
+    setBillDiscountValue(0);
+    setItemDiscountModes({});
+    setSelectedPaymentMethod('Cash');
+    setSplitCashAmount(0);
+    setSplitCardAmount(0);
     setCustomerSearch('');
   };
 
@@ -562,7 +639,7 @@ const POS: React.FC = () => {
     }
 
     // Meta line date: "27/02/2026 4:17 PM"
-    const sd = new Date(sale.date);
+    const sd = parseBusinessDate(sale.date);
     const metaDate = `${String(sd.getDate()).padStart(2, '0')}/${String(sd.getMonth() + 1).padStart(2, '0')}/${sd.getFullYear()} ${sd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
     // Footer date: "2026.February.27 AD 04:17 PM"
@@ -599,7 +676,7 @@ const POS: React.FC = () => {
 <meta charset="utf-8"/>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:Arial,Helvetica,sans-serif; width:76mm; margin:0 auto; padding:0; background:#fff; color:#000; font-size:13px; }
+body { font-family:Arial,Helvetica,sans-serif; width:72mm; margin:0 auto; padding:0; background:#fff; color:#000; font-size:13px; }
 .wrap { width:100%; padding:3mm 2mm 10mm 2mm; }
 .meta { display:flex; justify-content:space-between; font-size:10px; color:#555; margin-bottom:4px; }
 .logo-wrap { text-align:center; margin:2px 0 4px; }
@@ -626,7 +703,7 @@ table.totals .val { text-align:right; white-space:nowrap; }
 .barcode-wrap { text-align:center; margin-top:6px; }
 .barcode-num { font-size:12px; letter-spacing:3px; margin-top:4px; font-family:'Courier New',monospace; }
 .credit { text-align:center; font-size:10px; color:#444; margin-top:7px; line-height:1.6; }
-@media print { body { margin:0 auto; padding:0; } .wrap { padding:2mm 2mm 8mm 2mm; } @page { size:80mm auto; margin:0; } }
+@media print { body { margin:0 auto; padding:0; } .wrap { padding:2mm 2mm 8mm 2mm; } @page { size:72mm auto; margin:0; } }
 </style>
 </head><body>
 <div class="wrap">
@@ -673,8 +750,9 @@ table.totals .val { text-align:right; white-space:nowrap; }
 <div class="divider"></div>
 
 <div class="tender">Amount Tendered: ${fmtRs(sale.totalAmount)}</div>
-<div class="tender">Change Given: Rs.0.00</div>
-<div class="tender">Cash: Rs.0.00</div>
+${sale.paymentMethod === 'Cash+Card'
+  ? `<div class="tender">Cash: ${fmtRs(sale.cashAmount || 0)}</div><div class="tender">Card: ${fmtRs(sale.cardAmount || 0)}</div>`
+  : `<div class="tender">${sale.paymentMethod}: ${fmtRs(sale.totalAmount)}</div>`}
 
 <div class="divider-dot"></div>
 
@@ -684,8 +762,8 @@ table.totals .val { text-align:right; white-space:nowrap; }
 
 <div class="footer-note">
   For any exchange please produce the bill the<br>
-  garment within orginal tagintact within 07days<br>
-  NO EXCHANGE OR RETURN ACCEPETED FOR<br>
+  garment within original tag intact within 07days<br>
+  NO EXCHANGE OR RETURN ACCEPTED FOR<br>
   ITEM SOLD IN OFFERS AND SALE
 </div>
 
@@ -697,7 +775,7 @@ table.totals .val { text-align:right; white-space:nowrap; }
 </div>
 
 <div class="credit">
-  ware By Snow Soft(pvt)Ltd .(0114341530)<br>
+  Hoard Lavish Pvt Ltd<br>
   ${footerDate}
 </div>
 </div>
@@ -708,7 +786,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();};<\/script
     if (isElectron) {
       // Silent print directly to the configured thermal printer — no dialog
       const printerName = currentBranch?.thermalPrinterName || settings?.thermalPrinterName || '';
-      await (window as any).electronAPI.printReceipt(html, printerName, { pageWidthMm: 80 });
+      await (window as any).electronAPI.printReceipt(html, printerName, { pageWidthMm: 72 });
       setTimeout(() => setIsInvoiceOpen(false), 300);
     } else {
       // Fallback for non-Electron environments
@@ -821,7 +899,7 @@ th:last-child,th:nth-child(2),th:nth-child(3){text-align:right}td{padding:6px 10
 <div class="header"><div class="title">HOARD LAVISH</div><div class="subtitle">Product Exchange</div>
 <div class="ex-num">${exchange.exchangeNumber}</div>
 <div class="badge">Exchange</div>
-<div style="font-size:11px;color:#94a3b8;margin-top:8px">${new Date(exchange.date).toLocaleString()}</div>
+<div style="font-size:11px;color:#94a3b8;margin-top:8px">${parseBusinessDate(exchange.date).toLocaleString()}</div>
 ${exchange.originalInvoiceNumber ? `<div style="font-size:11px;color:#64748b;margin-top:4px">Original Sale: ${exchange.originalInvoiceNumber}</div>` : ''}
 ${exchange.customerName ? `<div style="font-size:12px;color:#475569;margin-top:4px">Customer: ${exchange.customerName}</div>` : ''}
 <div style="font-size:11px;color:#64748b;margin-top:4px">${exchange.branchName}</div>
@@ -898,6 +976,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-30 overflow-hidden">
                     {skuSuggestions.map(p => {
                       const stock = p.branchStock[currentBranch.id] || 0;
+                      const variantText = [p.size ? `Size: ${p.size}` : '', p.color ? `Color: ${p.color}` : ''].filter(Boolean).join(' • ');
                       return (
                         <button
                           key={p.id}
@@ -905,8 +984,13 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                           className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
                         >
                           <div>
-                            <span className="font-mono text-xs text-amber-600 font-bold">{p.sku}</span>
-                            <span className="text-sm text-slate-700 ml-2">{p.name}</span>
+                            <div>
+                              <span className="font-mono text-xs text-amber-600 font-bold">{p.sku}</span>
+                              <span className="text-sm text-slate-700 ml-2">{p.name}</span>
+                            </div>
+                            {variantText && (
+                              <p className="text-[11px] text-slate-500 mt-0.5">{variantText}</p>
+                            )}
                           </div>
                           <span className={`text-xs font-bold ${stock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                             {stock > 0 ? `${stock} in stock` : 'Out of stock'}
@@ -950,7 +1034,11 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
             </div>
             <div className="ml-4 flex items-center gap-2">
               <button
-                onClick={() => { setIsExchangeMode(!isExchangeMode); if (isExchangeMode) resetExchangeState(); }}
+                onClick={() => {
+                  setSelectedPaymentMethod('Cash');
+                  setIsExchangeMode(!isExchangeMode);
+                  if (isExchangeMode) resetExchangeState();
+                }}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${isExchangeMode ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'}`}
               >
                 <ArrowRightLeft size={14} /> Exchange
@@ -983,6 +1071,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredProducts.map(product => {
               const stock = product.branchStock[currentBranch.id] || 0;
+              const variantText = [product.size ? `Size: ${product.size}` : '', product.color ? `Color: ${product.color}` : ''].filter(Boolean).join(' • ');
               return (
                 <div
                   key={product.id}
@@ -997,6 +1086,9 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   )}
                   <h3 className="font-semibold text-slate-800 text-sm mb-1 truncate">{product.name}</h3>
                   <p className="text-xs text-slate-500 mb-2 font-mono">{product.sku}</p>
+                  {variantText && (
+                    <p className="text-[11px] text-slate-500 mb-2 line-clamp-1">{variantText}</p>
+                  )}
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-slate-900">{fmtCurrency(product.price)}</span>
                     {/* 3. Improved stock UI */}
@@ -1126,14 +1218,25 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   {/* Product Discount */}
                   <div className="flex items-center gap-2 mt-2">
                     <label className="text-xs text-slate-500 font-medium">Discount/unit:</label>
+                    <select
+                      value={itemDiscountModes[item.id] || 'amount'}
+                      onChange={(e) => setItemDiscountModes(prev => ({ ...prev, [item.id]: e.target.value as DiscountMode }))}
+                      className="px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:ring-1 focus:ring-slate-400 bg-white"
+                    >
+                      <option value="amount">{CUR}</option>
+                      <option value="percentage">%</option>
+                    </select>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      value={item.discount || 0}
-                      onChange={(e) => handleItemDiscountChange(item.id, Number(e.target.value))}
+                      value={(itemDiscountModes[item.id] || 'amount') === 'percentage'
+                        ? (item.price > 0 ? ((item.discount || 0) / item.price) * 100 : 0)
+                        : (item.discount || 0)
+                      }
+                      onChange={(e) => handleItemDiscountChange(item.id, Number(e.target.value), itemDiscountModes[item.id] || 'amount')}
                       className="w-20 px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:ring-1 focus:ring-slate-400"
-                      placeholder="0.00"
+                      placeholder={(itemDiscountModes[item.id] || 'amount') === 'percentage' ? '0.00%' : '0.00'}
                     />
                     {(item.discount || 0) > 0 && (
                       <span className="text-xs text-emerald-600 font-medium">
@@ -1195,16 +1298,31 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
             <div className="flex justify-between items-center text-slate-500 text-sm">
               <span>Additional Discount</span>
               <div className="flex items-center gap-1">
-                <span className="text-slate-400">- {CUR}</span>
+                <select
+                  value={billDiscountMode}
+                  onChange={(e) => handleBillDiscountModeChange(e.target.value as DiscountMode)}
+                  className="px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:ring-1 focus:ring-slate-400 bg-white"
+                >
+                  <option value="amount">{CUR}</option>
+                  <option value="percentage">%</option>
+                </select>
                 <input
                   type="number"
                   min="0"
+                  step="0.01"
                   className="w-20 text-right border-b border-slate-200 focus:border-amber-500 outline-none text-slate-700"
-                  value={discountAmount}
-                  onChange={(e) => handleDiscountChange(Number(e.target.value))}
+                  value={billDiscountValue}
+                  onChange={(e) => handleBillDiscountChange(Number(e.target.value))}
                 />
               </div>
             </div>
+
+            {additionalDiscountAmount > 0 && (
+              <div className="flex justify-between text-emerald-600 text-sm">
+                <span>Bill Discount ({billDiscountMode === 'percentage' ? `${billDiscountValue.toFixed(2)}%` : CUR})</span>
+                <span>-{fmtCurrency(additionalDiscountAmount)}</span>
+              </div>
+            )}
 
             {/* Total discounts */}
             {totalDiscount > 0 && (
@@ -1230,15 +1348,51 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
             >
               <option value="Cash">💵 Cash</option>
               <option value="Card">💳 Card</option>
+              <option value="Cash+Card">💵+💳 Cash+Card</option>
               <option value="PayHere">📱 PayHere</option>
               <option value="Online Transfer">🌐 Online Transfer</option>
               <option value="MintPay">💰 MintPay</option>
             </select>
           </div>
 
+          {selectedPaymentMethod === 'Cash+Card' && (
+            <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 space-y-2">
+              <p className="text-xs font-bold text-amber-700 uppercase">Split Payment</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-600">Cash Amount</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={splitCashAmount}
+                    onChange={(e) => setSplitCashAmount(Math.max(0, Number(e.target.value) || 0))}
+                    className="mt-1 w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600">Card Amount</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={splitCardAmount}
+                    onChange={(e) => setSplitCardAmount(Math.max(0, Number(e.target.value) || 0))}
+                    className="mt-1 w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                  />
+                </div>
+              </div>
+              <div className={`text-xs font-medium ${Math.abs(splitRemaining) <= 0.01 ? 'text-emerald-600' : 'text-amber-700'}`}>
+                {Math.abs(splitRemaining) <= 0.01
+                  ? 'Split total matches bill total'
+                  : `Remaining to match total: ${fmtCurrency(Math.abs(splitRemaining))}`}
+              </div>
+            </div>
+          )}
+
           <button
             onClick={handleCheckout}
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || (selectedPaymentMethod === 'Cash+Card' && Math.abs(splitRemaining) > 0.01)}
             className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 shadow-lg disabled:opacity-50 transition-colors"
           >
             <CreditCard size={18} /> Complete Sale
@@ -1298,7 +1452,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
               <div className="text-center mb-8">
                 <h1 className="text-2xl font-bold text-slate-900 tracking-tight">HOARD LAVISH</h1>
                 <p className="text-slate-500 text-sm mt-1">Luxury Fashion Retail</p>
-                <p className="text-slate-400 text-xs mt-1">{new Date(lastSale.date).toLocaleString()}</p>
+                <p className="text-slate-400 text-xs mt-1">{parseBusinessDate(lastSale.date).toLocaleString()}</p>
                 <p className="text-slate-400 text-xs mt-1 font-bold">{lastSale.branchName}</p>
               </div>
 
@@ -1349,6 +1503,18 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   <span>Payment Method</span>
                   <span>{lastSale.paymentMethod}</span>
                 </div>
+                {lastSale.paymentMethod === 'Cash+Card' && (
+                  <>
+                    <div className="flex justify-between text-xs text-slate-400 mt-1">
+                      <span>Cash Portion</span>
+                      <span>{fmtCurrency(lastSale.cashAmount || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-400 mt-1">
+                      <span>Card Portion</span>
+                      <span>{fmtCurrency(lastSale.cardAmount || 0)}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="mt-8 text-center">
@@ -1456,7 +1622,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                       </div>
                       <div className="text-right">
                         <span className="font-bold text-slate-800">{fmtCurrency(sale.totalAmount)}</span>
-                        <span className="text-[10px] text-slate-400 ml-2">{new Date(sale.date).toLocaleDateString()}</span>
+                        <span className="text-[10px] text-slate-400 ml-2">{parseBusinessDate(sale.date).toLocaleDateString()}</span>
                       </div>
                     </button>
                   ))}
@@ -1711,7 +1877,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
               <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-slate-900 tracking-tight">HOARD LAVISH</h1>
                 <p className="text-slate-500 text-sm mt-1">Product Exchange</p>
-                <p className="text-slate-400 text-xs mt-1">{new Date(lastExchange.date).toLocaleString()}</p>
+                <p className="text-slate-400 text-xs mt-1">{parseBusinessDate(lastExchange.date).toLocaleString()}</p>
                 <p className="text-slate-400 text-xs font-bold">{lastExchange.branchName}</p>
                 {lastExchange.originalInvoiceNumber && (
                   <p className="text-xs text-amber-600 mt-1">Original: {lastExchange.originalInvoiceNumber}</p>

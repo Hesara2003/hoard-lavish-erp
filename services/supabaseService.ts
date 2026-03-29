@@ -1,6 +1,9 @@
 import { supabase } from './supabaseClient';
 import type { Branch, Product, Customer, SalesRecord, StockMovement, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer } from '../types';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const asUuidOrNull = (value?: string): string | null => (value && UUID_PATTERN.test(value) ? value : null);
+
 // ============================================================
 // BRANCHES
 // ============================================================
@@ -90,7 +93,7 @@ export async function fetchProductsWithStock(): Promise<Product[]> {
     return (productsRes.data ?? []).map(r => mapProduct(r, stockMap[r.id] || {}));
 }
 
-export async function insertProduct(product: Product, branches: Branch[]): Promise<void> {
+export async function insertProduct(product: Product, branches: Branch[]): Promise<Product> {
     const { data, error } = await supabase.from('products').insert({
         name: product.name,
         category: product.category,
@@ -116,8 +119,17 @@ export async function insertProduct(product: Product, branches: Branch[]): Promi
     }));
     if (stockRows.length > 0) {
         const { error: stockError } = await supabase.from('product_branch_stock').insert(stockRows);
-        if (stockError) throw stockError;
+        if (stockError) {
+            // Best-effort rollback to avoid orphan products when stock-row insert fails.
+            await supabase.from('products').delete().eq('id', data.id);
+            throw stockError;
+        }
     }
+
+    return {
+        ...product,
+        id: data.id,
+    };
 }
 
 export async function updateProduct(id: string, updates: Partial<Product>): Promise<void> {
@@ -260,7 +272,7 @@ export async function deleteCustomer(id: string): Promise<void> {
 // SALES (via RPC for atomicity)
 // ============================================================
 export async function completeSaleRPC(sale: SalesRecord): Promise<string> {
-    const { data, error } = await supabase.rpc('fn_complete_sale', {
+    const payloadWithSplit = {
         p_invoice_number: sale.invoiceNumber,
         p_date: sale.date,
         p_subtotal: sale.subtotal,
@@ -269,10 +281,12 @@ export async function completeSaleRPC(sale: SalesRecord): Promise<string> {
         p_total_amount: sale.totalAmount,
         p_total_cost: sale.totalCost,
         p_payment_method: sale.paymentMethod,
-        p_customer_id: sale.customerId ?? null,
+        p_customer_id: asUuidOrNull(sale.customerId),
         p_customer_name: sale.customerName ?? null,
         p_branch_id: sale.branchId,
         p_branch_name: sale.branchName,
+        p_cash_amount: sale.cashAmount ?? null,
+        p_card_amount: sale.cardAmount ?? null,
         p_items: sale.items.map(item => ({
             product_id: item.id,
             product_name: item.name,
@@ -281,9 +295,42 @@ export async function completeSaleRPC(sale: SalesRecord): Promise<string> {
             cost_price: item.costPrice,
             discount: item.discount ?? 0,
         })),
-    });
-    if (error) throw error;
-    return data as string;
+    };
+
+    const { data, error } = await supabase.rpc('fn_complete_sale', payloadWithSplit);
+    if (!error) return data as string;
+
+    const message = String(error.message ?? '');
+    const details = String((error as any).details ?? '');
+    const isLegacySignatureMismatch =
+        message.includes('Could not find the function public.fn_complete_sale') &&
+        (details.includes('p_cash_amount') || details.includes('p_card_amount'));
+
+    if (!isLegacySignatureMismatch) {
+        throw error;
+    }
+
+    // Legacy database function does not support split payment fields.
+    if (sale.paymentMethod === 'Cash+Card') {
+        throw new Error('Database is outdated for Cash+Card checkout. Apply migration 008_cash_card_split_payments.sql in Supabase, then retry.');
+    }
+
+    const { p_cash_amount, p_card_amount, ...legacyPayload } = payloadWithSplit;
+    const { data: legacyData, error: legacyError } = await supabase.rpc('fn_complete_sale', legacyPayload);
+    if (legacyError) throw legacyError;
+    return legacyData as string;
+}
+
+export async function voidSaleRPC(saleId: string): Promise<void> {
+    const { error } = await supabase.rpc('fn_void_sale', { p_sale_id: saleId });
+    if (!error) return;
+
+    const message = String(error.message ?? '');
+    if (message.includes('Could not find the function public.fn_void_sale')) {
+        throw new Error('Database is outdated for sale voiding. Apply migration 009_void_sale.sql in Supabase, then retry.');
+    }
+
+    throw error;
 }
 
 export const mapSale = (r: any): SalesRecord => ({
@@ -311,6 +358,8 @@ export const mapSale = (r: any): SalesRecord => ({
     totalAmount: Number(r.total_amount),
     totalCost: Number(r.total_cost),
     paymentMethod: r.payment_method,
+    cashAmount: r.cash_amount !== null && r.cash_amount !== undefined ? Number(r.cash_amount) : undefined,
+    cardAmount: r.card_amount !== null && r.card_amount !== undefined ? Number(r.card_amount) : undefined,
     customerId: r.customer_id ?? undefined,
     customerName: r.customer_name ?? undefined,
     branchId: r.branch_id,

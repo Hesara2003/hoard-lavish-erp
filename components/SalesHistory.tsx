@@ -4,6 +4,7 @@ import { useStore } from '../context/StoreContext';
 import { SalesRecord, ExchangeRecord } from '../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { parseBusinessDate } from '../utils/dateTime';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -12,7 +13,7 @@ type TimePeriod = 'TODAY' | 'WEEK' | 'MONTH' | 'ALL' | 'CUSTOM';
 
 const isInPeriod = (dateStr: string, period: TimePeriod, dateFrom?: string, dateTo?: string): boolean => {
   if (period === 'ALL') return true;
-  const d = new Date(dateStr);
+  const d = parseBusinessDate(dateStr);
   const now = new Date();
   if (period === 'TODAY') {
     return d.toDateString() === now.toDateString();
@@ -83,7 +84,7 @@ const SalesHistory: React.FC = () => {
       .map(e => ({ recordType: 'exchange', data: e }));
 
     return [...sales, ...exchanges].sort(
-      (a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+      (a, b) => parseBusinessDate(b.data.date).getTime() - parseBusinessDate(a.data.date).getTime()
     );
   }, [salesHistory, exchangeHistory, searchTerm, timePeriod, branchFilter, dateFrom, dateTo]);
 
@@ -428,7 +429,7 @@ const SalesHistory: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2 opacity-60 text-xs">
                       <Calendar size={12} />
-                      <span>{new Date(ex.date).toLocaleDateString()}</span>
+                      <span>{parseBusinessDate(ex.date).toLocaleDateString()}</span>
                     </div>
                   </div>
                   {ex.branchName && (
@@ -465,7 +466,7 @@ const SalesHistory: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2 opacity-60 text-xs">
                       <Calendar size={12} />
-                      <span>{new Date(sale.date).toLocaleDateString()}</span>
+                      <span>{parseBusinessDate(sale.date).toLocaleDateString()}</span>
                     </div>
                   </div>
                   {sale.branchName && (
@@ -627,7 +628,7 @@ const SalesHistory: React.FC = () => {
                     <span style={{ display: 'inline-block', padding: '4px 12px', background: '#fef3c7', color: '#92400e', borderRadius: 20, fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const }}>
                       Exchange via {selectedExchange.paymentMethod}
                     </span>
-                    <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>{new Date(selectedExchange.date).toLocaleString()}</p>
+                    <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>{parseBusinessDate(selectedExchange.date).toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -752,7 +753,12 @@ const SalesHistory: React.FC = () => {
                     <span style={{ display: 'inline-block', padding: '4px 12px', background: '#dcfce7', color: '#166534', borderRadius: 20, fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const }}>
                       Paid via {selectedSale.paymentMethod}
                     </span>
-                    <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>{new Date(selectedSale.date).toLocaleString()}</p>
+                    {selectedSale.paymentMethod === 'Cash+Card' && (
+                      <p style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
+                        Cash: {fmtCurrency(selectedSale.cashAmount || 0)} | Card: {fmtCurrency(selectedSale.cardAmount || 0)}
+                      </p>
+                    )}
+                    <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>{parseBusinessDate(selectedSale.date).toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -771,7 +777,12 @@ const SalesHistory: React.FC = () => {
                     <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold uppercase">
                       Paid via {selectedSale.paymentMethod}
                     </span>
-                    <p className="text-xs text-slate-400 mt-2">{new Date(selectedSale.date).toLocaleString()}</p>
+                    {selectedSale.paymentMethod === 'Cash+Card' && (
+                      <p className="text-xs text-slate-500 mt-2">
+                        Cash: {fmtCurrency(selectedSale.cashAmount || 0)} | Card: {fmtCurrency(selectedSale.cardAmount || 0)}
+                      </p>
+                    )}
+                    <p className="text-xs text-slate-400 mt-2">{parseBusinessDate(selectedSale.date).toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -829,6 +840,16 @@ const SalesHistory: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16, color: '#0f172a', borderTop: '2px solid #e2e8f0', paddingTop: 8, marginTop: 4 }}>
                     <span>Grand Total</span><span>{fmtCurrency(selectedSale.totalAmount)}</span>
                   </div>
+                  {selectedSale.paymentMethod === 'Cash+Card' && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', padding: '4px 0' }}>
+                        <span>Cash Portion</span><span>{fmtCurrency(selectedSale.cashAmount || 0)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', padding: '4px 0' }}>
+                        <span>Card Portion</span><span>{fmtCurrency(selectedSale.cardAmount || 0)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div style={{ textAlign: 'center', marginTop: 32, paddingTop: 16, borderTop: '1px solid #f1f5f9', fontSize: 11, color: '#94a3b8' }}>

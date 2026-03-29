@@ -4,6 +4,7 @@ import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, F
 import { useStore } from '../context/StoreContext';
 import { EXPENSE_CATEGORIES } from '../constants';
 import { Expense } from '../types';
+import { parseBusinessDate } from '../utils/dateTime';
 
 // --- Delete Confirmation Popup ---
 const ConfirmDialog: React.FC<{
@@ -57,7 +58,7 @@ const Accounting: React.FC = () => {
 
   const isInPeriod = (dateStr: string) => {
     if (filterPeriod === 'ALL') return true;
-    const d = new Date(dateStr);
+    const d = parseBusinessDate(dateStr);
     const now = new Date();
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   };
@@ -101,7 +102,7 @@ const Accounting: React.FC = () => {
     
     // Helper to aggregate
     const addToMap = (dateStr: string, type: 'income' | 'expense', amount: number) => {
-      const key = new Date(dateStr).toLocaleDateString();
+      const key = parseBusinessDate(dateStr).toLocaleDateString();
       if (!dataMap.has(key)) dataMap.set(key, { date: key, income: 0, expense: 0 });
       const entry = dataMap.get(key)!;
       if (type === 'income') entry.income += amount;
@@ -120,7 +121,7 @@ const Accounting: React.FC = () => {
       if (cost > 0) addToMap(t.date, 'expense', cost);
     });
 
-    return Array.from(dataMap.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return Array.from(dataMap.values()).sort((a, b) => parseBusinessDate(a.date).getTime() - parseBusinessDate(b.date).getTime());
   }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredExchanges, filteredTransfers]);
 
   // Pie Chart Data: Expense Breakdown
@@ -190,7 +191,7 @@ const Accounting: React.FC = () => {
         id: e.id, date: e.date, desc: `Exchange #${e.exchangeNumber}${e.originalInvoiceNumber ? ` (Sale #${e.originalInvoiceNumber})` : ''}: ${e.description || 'Product exchange'}`, amount: Math.abs(e.difference), type: (e.difference >= 0 ? 'IN' : 'OUT') as 'IN' | 'OUT', category: 'Exchange'
       }))
     ];
-    return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return all.sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime());
   }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredTransfers, filteredExchanges]);
 
 
@@ -377,7 +378,7 @@ const Accounting: React.FC = () => {
                  <tbody className="divide-y divide-slate-100">
                    {ledger.slice(0, 10).map((item, idx) => (
                      <tr key={idx} className="hover:bg-slate-50">
-                       <td className="p-4 text-slate-500 whitespace-nowrap">{new Date(item.date).toLocaleDateString()}</td>
+                       <td className="p-4 text-slate-500 whitespace-nowrap">{parseBusinessDate(item.date).toLocaleDateString()}</td>
                        <td className="p-4 font-medium text-slate-900">{item.desc}</td>
                        <td className="p-4 text-slate-600">{item.category}</td>
                        <td className={`p-4 text-right font-bold ${item.type === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -416,7 +417,7 @@ const Accounting: React.FC = () => {
                <tbody className="divide-y divide-slate-100">
                  {filteredExpenses.map(e => (
                    <tr key={e.id} className="hover:bg-slate-50 group">
-                     <td className="p-4 text-slate-500">{new Date(e.date).toLocaleDateString()}</td>
+                     <td className="p-4 text-slate-500">{parseBusinessDate(e.date).toLocaleDateString()}</td>
                      <td className="p-4 font-medium text-slate-900">{e.description}</td>
                      <td className="p-4 text-slate-600">
                         <span className="bg-slate-100 px-2 py-1 rounded text-xs font-medium">{e.category}</span>

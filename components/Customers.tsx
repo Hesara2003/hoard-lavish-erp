@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Users, Plus, Phone, Mail, Edit2, Trash2, X, Search, ChevronLeft, ShoppingBag, Star, Calendar, AlertTriangle } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Customer } from '../types';
+import { parseBusinessDate } from '../utils/dateTime';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -58,7 +59,7 @@ const Customers: React.FC = () => {
   // Customer Profile Calculations
   const customerHistory = salesHistory.filter(s => s.customerId === selectedCustomer?.id);
   const lastVisit = customerHistory.length > 0
-    ? new Date(customerHistory[0].date).toLocaleDateString()
+    ? parseBusinessDate(customerHistory[0].date).toLocaleDateString()
     : 'Never';
 
   // Handlers
@@ -282,7 +283,7 @@ const Customers: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {customerHistory.map(sale => (
                     <tr key={sale.id} className="hover:bg-slate-50">
-                      <td className="p-4 text-slate-500">{new Date(sale.date).toLocaleDateString()}</td>
+                      <td className="p-4 text-slate-500">{parseBusinessDate(sale.date).toLocaleDateString()}</td>
                       <td className="p-4 font-mono text-slate-600">{sale.invoiceNumber}</td>
                       <td className="p-4 text-slate-800 font-medium">
                         {sale.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
