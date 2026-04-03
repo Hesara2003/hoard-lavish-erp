@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, Plus, Minus, Trash2, CreditCard, Banknote, UserPlus, User, X, ScanBarcode, Printer, CheckCircle, Store, AlertTriangle, ArrowRightLeft, RotateCcw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { Product, Customer, SalesRecord, CartItem, ExchangeRecord } from '../types';
+import { Product, Customer, SalesRecord, CartItem, ExchangeRecord, ExchangeLineItem } from '../types';
 import { parseBusinessDate } from '../utils/dateTime';
 
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 type DiscountMode = 'amount' | 'percentage';
+type ExchangeSettlementMethod = 'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay' | 'Cash+Card';
 
 // --- Alert Popup Component ---
 const AlertPopup: React.FC<{ message: string; type?: 'error' | 'warning'; onClose: () => void }> = ({ message, type = 'error', onClose }) => (
@@ -36,8 +37,36 @@ const AlertPopup: React.FC<{ message: string; type?: 'error' | 'warning'; onClos
   </div>
 );
 
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+const allocateDiscountByUnits = (totalDiscount: number, totalUnits: number): number[] => {
+  if (totalUnits <= 0 || totalDiscount <= 0) return Array.from({ length: totalUnits }, () => 0);
+  const base = round2(totalDiscount / totalUnits);
+  const shares = Array.from({ length: totalUnits }, () => base);
+  const allocated = round2(shares.reduce((sum, v) => sum + v, 0));
+  const diff = round2(totalDiscount - allocated);
+  if (shares.length > 0 && diff !== 0) {
+    shares[shares.length - 1] = round2(Math.max(0, shares[shares.length - 1] + diff));
+  }
+  return shares;
+};
+
+const getEffectiveLineTotal = (item: ExchangeLineItem, quantity: number): number => {
+  const qty = Math.max(0, quantity);
+  if (item.sourceType === 'no-sale-return') {
+    const manual = Math.max(0, item.manualReturnUnitPrice ?? 0);
+    return round2(manual * qty);
+  }
+
+  const unitItemDiscount = Math.max(0, item.unitItemDiscount ?? item.discount ?? 0);
+  const unitBillDiscountShare = Math.max(0, item.unitBillDiscountShare ?? 0);
+  const fallbackUnit = Math.max(0, item.price - unitItemDiscount - unitBillDiscountShare);
+  const effectiveUnit = Math.max(0, item.effectiveUnitPrice ?? fallbackUnit);
+  return round2(effectiveUnit * qty);
+};
+
 const POS: React.FC = () => {
-  const { products, customers, cart, salesHistory, addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch, currentUser, settings } = useStore();
+  const { products, customers, cart, salesHistory, exchangeHistory, addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, completeSale, completeExchange, clearCart, addCustomer, adjustStock, currentBranch, currentUser, settings } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   // Keep a ref in sync with barcodeInput so the submit handler always reads
@@ -71,14 +100,17 @@ const POS: React.FC = () => {
   const [isExchangeMode, setIsExchangeMode] = useState(false);
   const [exchangeSaleSearch, setExchangeSaleSearch] = useState('');
   const [selectedExchangeSale, setSelectedExchangeSale] = useState<SalesRecord | null>(null);
-  const [returnedItems, setReturnedItems] = useState<CartItem[]>([]);
-  const [exchangeNewItems, setExchangeNewItems] = useState<CartItem[]>([]);
+  const [returnedItems, setReturnedItems] = useState<ExchangeLineItem[]>([]);
+  const [exchangeNewItems, setExchangeNewItems] = useState<ExchangeLineItem[]>([]);
   const [exchangeDescription, setExchangeDescription] = useState('');
   const [exchangeNewProductSearch, setExchangeNewProductSearch] = useState('');
   const [lastExchange, setLastExchange] = useState<ExchangeRecord | null>(null);
   const [isExchangeInvoiceOpen, setIsExchangeInvoiceOpen] = useState(false);
-  const [noSaleReturnItems, setNoSaleReturnItems] = useState<CartItem[]>([]); // manual stock return without sale
+  const [noSaleReturnItems, setNoSaleReturnItems] = useState<ExchangeLineItem[]>([]); // manual stock return without sale
   const [noSaleProductSearch, setNoSaleProductSearch] = useState('');
+  const [exchangeBillDiscountMode, setExchangeBillDiscountMode] = useState<DiscountMode>('amount');
+  const [exchangeBillDiscountValue, setExchangeBillDiscountValue] = useState<number>(0);
+  const [exchangeRefundMethod, setExchangeRefundMethod] = useState<ExchangeSettlementMethod>('Cash');
 
   // Scan mode — overlay that listens for scanner input
   const [isScanMode, setIsScanMode] = useState(false);
@@ -347,7 +379,7 @@ const POS: React.FC = () => {
 
   // 1. Dynamic filtering by name AND SKU (search input only — barcode uses dropdown)
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    const filtered = products.filter(p => {
       const term = searchTerm.toLowerCase();
       const matchesSearch = !term
         || p.name.toLowerCase().includes(term)
@@ -357,7 +389,20 @@ const POS: React.FC = () => {
       const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchTerm, selectedCategory]);
+    
+    // Sort: in-stock items first, out-of-stock items at the bottom
+    return filtered.sort((a, b) => {
+      const aStock = a.branchStock[currentBranch.id] || 0;
+      const bStock = b.branchStock[currentBranch.id] || 0;
+      
+      // Both have stock or both out of stock: keep original order
+      if ((aStock > 0) === (bStock > 0)) return 0;
+      // a has stock, b doesn't: a comes first
+      if (aStock > 0) return -1;
+      // b has stock, a doesn't: b comes first
+      return 1;
+    });
+  }, [products, searchTerm, selectedCategory, currentBranch])
 
   // 1b. Dynamic SKU filtering for barcode input
   const skuSuggestions = useMemo(() => {
@@ -585,7 +630,7 @@ const POS: React.FC = () => {
         : undefined
     );
     setLastSale(sale);
-    setIsInvoiceOpen(true);
+    setIsInvoiceOpen(false);
     setSelectedCustomer(null);
     setBillDiscountMode('amount');
     setBillDiscountValue(0);
@@ -594,6 +639,18 @@ const POS: React.FC = () => {
     setSplitCashAmount(0);
     setSplitCardAmount(0);
     setCustomerSearch('');
+
+    if (hasThermalPrinterConfigured) {
+      void printReceiptForSale(sale).then(printed => {
+        if (printed) {
+          setTimeout(() => setIsInvoiceOpen(false), 300);
+        } else {
+          setIsInvoiceOpen(true);
+        }
+      });
+    } else {
+      setIsInvoiceOpen(true);
+    }
   };
 
   const handleCreateCustomer = () => {
@@ -619,35 +676,36 @@ const POS: React.FC = () => {
     setIsCustomerDropdownOpen(false);
   };
 
-  const handlePrint = async () => {
-    if (!lastSale) return;
+  const getMountLaviniaDefaultPrinter = () => {
+    const normalizedName = (currentBranch?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return normalizedName === 'mountlavinia' ? 'XP - Q80B' : '';
+  };
 
-    // Build the receipt HTML (same content, but no auto-print script when using Electron)
+  const getThermalPrinterName = () => {
+    const configured = (currentBranch?.thermalPrinterName || settings?.thermalPrinterName || '').trim();
+    return configured || getMountLaviniaDefaultPrinter();
+  };
+  const hasThermalPrinterConfigured = Boolean(getThermalPrinterName());
+
+  const printReceiptForSale = async (sale: SalesRecord) => {
     const isElectron = !!(window as any).electronAPI?.printReceipt;
-
-    const sale = lastSale;
     const fmtRs = (n: number) => `Rs. ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const discountPercent = sale.subtotal > 0 ? ((sale.discount / sale.subtotal) * 100).toFixed(2) : '0.00';
     const totalSavings = sale.items.reduce((s, i) => s + (i.discount || 0) * i.quantity, 0) + sale.discount;
 
-    // In Electron the print window is a data: URL so relative/origin paths don't resolve.
-    // Read the logo via IPC so it's embedded as a base64 data URI.
     let logoUrl = window.location.origin + '/logo.png';
     if (isElectron && (window as any).electronAPI?.getLogoBase64) {
       const b64 = await (window as any).electronAPI.getLogoBase64();
       if (b64) logoUrl = b64;
     }
 
-    // Meta line date: "27/02/2026 4:17 PM"
     const sd = parseBusinessDate(sale.date);
     const metaDate = `${String(sd.getDate()).padStart(2, '0')}/${String(sd.getMonth() + 1).padStart(2, '0')}/${sd.getFullYear()} ${sd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
-    // Footer date: "2026.February.27 AD 04:17 PM"
     const now = new Date();
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const footerDate = `${now.getFullYear()}.${MONTHS[now.getMonth()]}.${String(now.getDate()).padStart(2, '0')} AD ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
-    // Barcode
     const barcodeStr = sale.invoiceNumber.replace(/\D/g, '').slice(-4).padStart(4, '0');
     let barsHtml = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:0;">';
     barsHtml += '<div style="width:3px;height:50px;background:#000;"></div><div style="width:1px;height:50px;background:#fff;"></div><div style="width:2px;height:50px;background:#000;"></div><div style="width:1px;height:50px;background:#fff;"></div>';
@@ -658,7 +716,6 @@ const POS: React.FC = () => {
     }
     barsHtml += '<div style="width:2px;height:50px;background:#000;"></div><div style="width:1px;height:50px;background:#fff;"></div><div style="width:3px;height:50px;background:#000;"></div></div>';
 
-    // Item rows - bold item name, variant below, then qty/price columns
     const itemsHtml = sale.items.map(item => {
       const discountedTotal = (item.price - (item.discount || 0)) * item.quantity;
       const variantLine = [item.size, item.color].filter(Boolean).join(' / ');
@@ -784,17 +841,24 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();};<\/script
 </body></html>`;
 
     if (isElectron) {
-      // Silent print directly to the configured thermal printer — no dialog
-      const printerName = currentBranch?.thermalPrinterName || settings?.thermalPrinterName || '';
-      await (window as any).electronAPI.printReceipt(html, printerName, { pageWidthMm: 72 });
+      const printerName = getThermalPrinterName();
+      const printResult = await (window as any).electronAPI.printReceipt(html, printerName, { pageWidthMm: 72 });
+      return Boolean(printResult?.success);
+    }
+
+    const printWindow = window.open('', '_blank', 'width=400,height=700');
+    if (!printWindow) return false;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    return true;
+  };
+
+  const handlePrint = async () => {
+    if (!lastSale) return;
+
+    const printed = await printReceiptForSale(lastSale);
+    if (printed) {
       setTimeout(() => setIsInvoiceOpen(false), 300);
-    } else {
-      // Fallback for non-Electron environments
-      const printWindow = window.open('', '_blank', 'width=400,height=700');
-      if (!printWindow) return;
-      printWindow.document.write(html);
-      printWindow.document.close();
-      setTimeout(() => setIsInvoiceOpen(false), 800);
     }
   };
 
@@ -808,6 +872,60 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();};<\/script
       (s.customerName && s.customerName.toLowerCase().includes(term))
     ).slice(0, 10);
   }, [salesHistory, exchangeSaleSearch]);
+
+  const linkedReturnedQtyByLine = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!selectedExchangeSale) return map;
+
+    exchangeHistory
+      .filter(ex => ex.originalSaleId === selectedExchangeSale.id)
+      .forEach(ex => {
+        ex.returnedItems.forEach(it => {
+          if (typeof it.sourceSaleItemIndex !== 'number') return;
+          const lineKey = `${selectedExchangeSale.id}:${it.sourceSaleItemIndex}`;
+          map.set(lineKey, (map.get(lineKey) || 0) + Math.max(0, it.quantity));
+        });
+      });
+
+    return map;
+  }, [exchangeHistory, selectedExchangeSale]);
+
+  const selectedExchangeSalePricedLines = useMemo(() => {
+    if (!selectedExchangeSale) return [] as Array<{ item: CartItem; lineIndex: number; lineKey: string; unitItemDiscount: number; unitBillDiscountShare: number; effectiveUnitPrice: number; alreadyReturned: number; availableQuantity: number; }>;
+
+    const totalUnits = selectedExchangeSale.items.reduce((sum, item) => sum + Math.max(0, item.quantity), 0);
+    const itemDiscountTotal = selectedExchangeSale.items.reduce((sum, item) => sum + (Math.max(0, item.discount || 0) * item.quantity), 0);
+    const rawBillOnlyDiscount = Math.max(0, selectedExchangeSale.discount - itemDiscountTotal);
+    const subtotalAfterItemDiscounts = selectedExchangeSale.items.reduce((sum, item) => {
+      const unitItemDiscount = Math.max(0, item.discount || 0);
+      return sum + Math.max(0, item.price - unitItemDiscount) * item.quantity;
+    }, 0);
+    const billOnlyDiscount = Math.min(rawBillOnlyDiscount, Math.max(0, subtotalAfterItemDiscounts));
+
+    const perUnitBillShares = allocateDiscountByUnits(billOnlyDiscount, totalUnits);
+    let cursor = 0;
+
+    return selectedExchangeSale.items.map((item, idx) => {
+      const unitItemDiscount = Math.max(0, item.discount || 0);
+      const lineUnitShares = perUnitBillShares.slice(cursor, cursor + item.quantity);
+      cursor += item.quantity;
+      const unitBillDiscountShare = lineUnitShares.length > 0
+        ? round2(lineUnitShares.reduce((sum, v) => sum + v, 0) / lineUnitShares.length)
+        : 0;
+      const effectiveUnitPrice = round2(Math.max(0, item.price - unitItemDiscount - unitBillDiscountShare));
+
+      return {
+        item,
+        lineIndex: idx,
+        lineKey: `${selectedExchangeSale.id}:${idx}`,
+        unitItemDiscount,
+        unitBillDiscountShare,
+        effectiveUnitPrice,
+        alreadyReturned: linkedReturnedQtyByLine.get(`${selectedExchangeSale.id}:${idx}`) || 0,
+        availableQuantity: Math.max(0, item.quantity - (linkedReturnedQtyByLine.get(`${selectedExchangeSale.id}:${idx}`) || 0)),
+      };
+    });
+  }, [linkedReturnedQtyByLine, selectedExchangeSale]);
 
   const exchangeNewProductResults = useMemo(() => {
     if (!exchangeNewProductSearch.trim()) return [];
@@ -826,10 +944,36 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();};<\/script
     ).slice(0, 8);
   }, [products, noSaleProductSearch]);
 
-  const handleSelectReturnItem = (item: CartItem) => {
-    const existing = returnedItems.find(r => r.id === item.id);
+  const handleSelectReturnItem = (line: { item: CartItem; lineIndex: number; lineKey: string; unitItemDiscount: number; unitBillDiscountShare: number; effectiveUnitPrice: number; alreadyReturned: number; availableQuantity: number; }) => {
+    const existing = returnedItems.find(r => r.sourceLineKey === line.lineKey);
     if (existing) return;
-    setReturnedItems(prev => [...prev, { ...item, quantity: 1 }]);
+    if (line.availableQuantity <= 0) {
+      setAlertPopup({ message: 'All quantities from this sale line have already been returned in previous exchanges.', type: 'warning' });
+      return;
+    }
+
+    setReturnedItems(prev => [
+      ...prev,
+      {
+        ...line.item,
+        quantity: 1,
+        sourceType: 'linked-sale',
+        sourceSaleId: selectedExchangeSale?.id,
+        sourceInvoiceNumber: selectedExchangeSale?.invoiceNumber,
+        sourceSaleItemIndex: line.lineIndex,
+        sourceLineKey: line.lineKey,
+        originalQuantity: line.availableQuantity,
+        unitItemDiscount: line.unitItemDiscount,
+        unitBillDiscountShare: line.unitBillDiscountShare,
+        effectiveUnitPrice: line.effectiveUnitPrice,
+        lineEffectiveTotal: getEffectiveLineTotal({
+          ...line.item,
+          unitItemDiscount: line.unitItemDiscount,
+          unitBillDiscountShare: line.unitBillDiscountShare,
+          effectiveUnitPrice: line.effectiveUnitPrice,
+        }, 1),
+      }
+    ]);
   };
 
   const handleAddExchangeNewItem = (product: Product) => {
@@ -837,7 +981,12 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();};<\/script
     if (existing) {
       setExchangeNewItems(prev => prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
     } else {
-      setExchangeNewItems(prev => [...prev, { ...product, quantity: 1 }]);
+      setExchangeNewItems(prev => [...prev, {
+        ...product,
+        quantity: 1,
+        sourceType: 'new-exchange-item',
+        unitItemDiscount: 0,
+      }]);
     }
     setExchangeNewProductSearch('');
   };
@@ -845,36 +994,89 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();};<\/script
   const handleAddNoSaleReturnItem = (product: Product) => {
     const existing = noSaleReturnItems.find(r => r.id === product.id);
     if (existing) return;
-    setNoSaleReturnItems(prev => [...prev, { ...product, quantity: 1 }]);
+    setNoSaleReturnItems(prev => [...prev, {
+      ...product,
+      quantity: 1,
+      sourceType: 'no-sale-return',
+      manualReturnUnitPrice: product.price,
+      effectiveUnitPrice: product.price,
+      lineEffectiveTotal: round2(product.price),
+    }]);
     setNoSaleProductSearch('');
   };
 
-  const returnedTotal = returnedItems.reduce((sum, i) => sum + i.price * i.quantity, 0)
-    + noSaleReturnItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const newItemsTotal = exchangeNewItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const exchangeNewSubtotal = exchangeNewItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+  const exchangeNewItemDiscountTotal = exchangeNewItems.reduce((sum, i) => sum + (Math.max(0, i.unitItemDiscount || 0) * i.quantity), 0);
+  const exchangeNewSubtotalAfterItemDiscounts = Math.max(0, exchangeNewSubtotal - exchangeNewItemDiscountTotal);
+  const exchangeNewBillDiscountRaw = exchangeBillDiscountMode === 'percentage'
+    ? (exchangeNewSubtotalAfterItemDiscounts * exchangeBillDiscountValue) / 100
+    : exchangeBillDiscountValue;
+  const exchangeNewBillDiscount = Math.min(Math.max(0, exchangeNewBillDiscountRaw), exchangeNewSubtotalAfterItemDiscounts);
+  const exchangeNewBillUnitShare = allocateDiscountByUnits(exchangeNewBillDiscount, exchangeNewItems.reduce((sum, i) => sum + i.quantity, 0));
+
+  let exchangeBillCursor = 0;
+  const exchangeNewItemsPriced = exchangeNewItems.map(item => {
+    const lineShares = exchangeNewBillUnitShare.slice(exchangeBillCursor, exchangeBillCursor + item.quantity);
+    exchangeBillCursor += item.quantity;
+    const unitBillDiscountShare = lineShares.length > 0
+      ? round2(lineShares.reduce((sum, v) => sum + v, 0) / lineShares.length)
+      : 0;
+    const effectiveUnitPrice = round2(Math.max(0, item.price - Math.max(0, item.unitItemDiscount || 0) - unitBillDiscountShare));
+    return {
+      ...item,
+      unitBillDiscountShare,
+      effectiveUnitPrice,
+      lineEffectiveTotal: round2(effectiveUnitPrice * item.quantity),
+    };
+  });
+
+  const returnedTotal = returnedItems.reduce((sum, i) => sum + getEffectiveLineTotal(i, i.quantity), 0)
+    + noSaleReturnItems.reduce((sum, i) => sum + getEffectiveLineTotal(i, i.quantity), 0);
+  const newItemsTotal = exchangeNewItemsPriced.reduce((sum, i) => sum + (i.lineEffectiveTotal || getEffectiveLineTotal(i, i.quantity)), 0);
   const exchangeDifference = newItemsTotal - returnedTotal;
 
   const handleCompleteExchange = () => {
-    const allReturned = [...returnedItems, ...noSaleReturnItems];
+    const allReturned = [
+      ...returnedItems.map(i => ({ ...i, lineEffectiveTotal: getEffectiveLineTotal(i, i.quantity) })),
+      ...noSaleReturnItems.map(i => ({
+        ...i,
+        effectiveUnitPrice: Math.max(0, i.manualReturnUnitPrice ?? 0),
+        lineEffectiveTotal: getEffectiveLineTotal(i, i.quantity)
+      })),
+    ];
     if (allReturned.length === 0 && exchangeNewItems.length === 0) return;
 
-    const exchange = completeExchange({
-      originalSaleId: selectedExchangeSale?.id,
-      originalInvoiceNumber: selectedExchangeSale?.invoiceNumber,
-      returnedItems: allReturned,
-      newItems: exchangeNewItems,
-      returnedTotal,
-      newTotal: newItemsTotal,
-      difference: exchangeDifference,
-      paymentMethod: selectedPaymentMethod,
-      customerId: selectedExchangeSale?.customerId,
-      customerName: selectedExchangeSale?.customerName,
-      description: exchangeDescription || 'Product Exchange',
-    });
+    const invalidNoSaleReturn = noSaleReturnItems.some(i => !Number.isFinite(i.manualReturnUnitPrice) || (i.manualReturnUnitPrice ?? 0) <= 0);
+    if (invalidNoSaleReturn) {
+      setAlertPopup({ message: 'Manual return price is required for no-sale return items.', type: 'warning' });
+      return;
+    }
 
-    setLastExchange(exchange);
-    setIsExchangeInvoiceOpen(true);
-    resetExchangeState();
+    try {
+      const exchange = completeExchange({
+        originalSaleId: selectedExchangeSale?.id,
+        originalInvoiceNumber: selectedExchangeSale?.invoiceNumber,
+        returnedItems: allReturned,
+        newItems: exchangeNewItemsPriced,
+        returnedTotal,
+        newTotal: newItemsTotal,
+        difference: exchangeDifference,
+        paymentMethod: selectedPaymentMethod,
+        refundMethod: exchangeDifference < 0 ? exchangeRefundMethod : undefined,
+        settlementType: exchangeDifference > 0 ? 'CUSTOMER_PAYS' : exchangeDifference < 0 ? 'STORE_REFUND' : 'EVEN',
+        exchangeBillDiscount: exchangeNewBillDiscount,
+        customerId: selectedExchangeSale?.customerId,
+        customerName: selectedExchangeSale?.customerName,
+        description: exchangeDescription || 'Product Exchange',
+      });
+
+      setLastExchange(exchange);
+      setIsExchangeInvoiceOpen(true);
+      resetExchangeState();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Exchange could not be completed.';
+      setAlertPopup({ message: msg, type: 'warning' });
+    }
   };
 
   const handlePrintExchangeInvoice = async (exchange: ExchangeRecord) => {
@@ -906,25 +1108,27 @@ ${exchange.customerName ? `<div style="font-size:12px;color:#475569;margin-top:4
 </div>
 ${exchange.returnedItems.length > 0 ? `<div class="section"><div class="section-title">Returned Items</div>
 <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>
-${exchange.returnedItems.map(i => `<tr><td>${i.name}${i.size || i.color ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${[i.size ? `Size: ${i.size}` : '', i.color ? `Color: ${i.color}` : ''].filter(Boolean).join(' • ')}</div>` : ''}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
+${exchange.returnedItems.map(i => `<tr><td>${i.name}${i.size || i.color ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${[i.size ? `Size: ${i.size}` : '', i.color ? `Color: ${i.color}` : ''].filter(Boolean).join(' • ')}</div>` : ''}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.effectiveUnitPrice ?? i.price)}</td><td style="text-align:right">${fmtC(i.lineEffectiveTotal ?? ((i.effectiveUnitPrice ?? i.price) * i.quantity))}</td></tr>`).join('')}
 </tbody></table>
 <div class="row" style="justify-content:flex-end;font-weight:600;color:#dc2626">Return Credit: -${fmtC(exchange.returnedTotal)}</div></div>` : ''}
 ${exchange.newItems.length > 0 ? `<div class="section"><div class="section-title">New Items</div>
 <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>
-${exchange.newItems.map(i => `<tr><td>${i.name}${i.size || i.color ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${[i.size ? `Size: ${i.size}` : '', i.color ? `Color: ${i.color}` : ''].filter(Boolean).join(' • ')}</div>` : ''}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.price)}</td><td style="text-align:right">${fmtC(i.price * i.quantity)}</td></tr>`).join('')}
+${exchange.newItems.map(i => `<tr><td>${i.name}${i.size || i.color ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${[i.size ? `Size: ${i.size}` : '', i.color ? `Color: ${i.color}` : ''].filter(Boolean).join(' • ')}</div>` : ''}</td><td style="text-align:right">${i.quantity}</td><td style="text-align:right">${fmtC(i.effectiveUnitPrice ?? i.price)}</td><td style="text-align:right">${fmtC(i.lineEffectiveTotal ?? ((i.effectiveUnitPrice ?? i.price) * i.quantity))}</td></tr>`).join('')}
 </tbody></table>
 <div class="row" style="justify-content:flex-end;font-weight:600;color:#166534">New Total: ${fmtC(exchange.newTotal)}</div></div>` : ''}
 <div class="totals">
 <div class="row"><span>Returned Value</span><span>-${fmtC(exchange.returnedTotal)}</span></div>
 <div class="row"><span>New Items Value</span><span>${fmtC(exchange.newTotal)}</span></div>
+${exchange.exchangeBillDiscount ? `<div class="row"><span>Exchange Bill Discount</span><span>-${fmtC(exchange.exchangeBillDiscount)}</span></div>` : ''}
 <div class="grand ${exchange.difference < 0 ? 'refund' : 'charge'}"><span>${exchange.difference >= 0 ? 'Customer Pays' : 'Customer Credit'}</span><span>${fmtC(Math.abs(exchange.difference))}</span></div>
 <div class="row" style="margin-top:4px"><span>Payment</span><span>${exchange.paymentMethod}</span></div>
+${exchange.refundMethod ? `<div class="row"><span>Refund Method</span><span>${exchange.refundMethod}</span></div>` : ''}
 </div>
 ${exchange.description ? `<div style="margin-top:16px;padding:8px 12px;background:#f8fafc;border-radius:6px;font-size:11px;color:#64748b"><strong>Note:</strong> ${exchange.description}</div>` : ''}
 <div class="footer">Thank you — Hoard Lavish ERP</div>
 ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>'}</body></html>`;
     if (isElectron) {
-      const printerName = currentBranch?.thermalPrinterName || settings?.thermalPrinterName || '';
+      const printerName = getThermalPrinterName();
       await (window as any).electronAPI.printReceipt(html, printerName);
     } else {
       const printWindow = window.open('', '_blank');
@@ -943,6 +1147,9 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
     setNoSaleReturnItems([]);
     setNoSaleProductSearch('');
     setExchangeSaleSearch('');
+    setExchangeBillDiscountMode('amount');
+    setExchangeBillDiscountValue(0);
+    setExchangeRefundMethod('Cash');
   };
 
   return (
@@ -1632,15 +1839,18 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   <div className="mt-3 p-3 bg-white rounded-lg border border-amber-200">
                     <p className="text-xs font-bold text-slate-500 uppercase mb-2">Select items to return from {selectedExchangeSale.invoiceNumber}</p>
                     <div className="space-y-1">
-                      {selectedExchangeSale.items.map((item, idx) => {
-                        const isSelected = returnedItems.some(r => r.id === item.id);
+                      {selectedExchangeSalePricedLines.map((line) => {
+                        const { item, lineKey, lineIndex, effectiveUnitPrice, unitItemDiscount, unitBillDiscountShare, availableQuantity, alreadyReturned } = line;
+                        const isSelected = returnedItems.some(r => r.sourceLineKey === lineKey);
+                        const selectedRow = returnedItems.find(r => r.sourceLineKey === lineKey);
                         return (
-                          <div key={idx} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50">
+                          <div key={lineKey} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50">
                             <div className="flex items-center gap-3">
                               <input
                                 type="checkbox"
                                 checked={isSelected}
-                                onChange={() => isSelected ? setReturnedItems(prev => prev.filter(r => r.id !== item.id)) : handleSelectReturnItem(item)}
+                                disabled={!isSelected && availableQuantity <= 0}
+                                onChange={() => isSelected ? setReturnedItems(prev => prev.filter(r => r.sourceLineKey !== lineKey)) : handleSelectReturnItem(line)}
                                 className="w-4 h-4 rounded border-slate-300 accent-amber-500"
                               />
                               <div>
@@ -1650,7 +1860,9 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                                     {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
                                   </p>
                                 )}
-                                <p className="text-xs text-slate-400">{fmtCurrency(item.price)} each</p>
+                                <p className="text-xs text-slate-400">SKU: {item.sku || '-'} • Line #{lineIndex + 1}</p>
+                                <p className="text-xs text-slate-400">List: {fmtCurrency(item.price)} | Disc: -{fmtCurrency(unitItemDiscount + unitBillDiscountShare)} | Return Value: {fmtCurrency(effectiveUnitPrice)} each</p>
+                                <p className={`text-xs mt-0.5 ${availableQuantity > 0 ? 'text-slate-400' : 'text-red-500'}`}>Sold: {item.quantity} • Already Returned: {alreadyReturned} • Available: {availableQuantity}</p>
                               </div>
                             </div>
                             {isSelected && (
@@ -1659,12 +1871,16 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                                 <input
                                   type="number"
                                   min={1}
-                                  max={item.quantity}
-                                  value={returnedItems.find(r => r.id === item.id)?.quantity || 1}
-                                  onChange={e => setReturnedItems(prev => prev.map(r => r.id === item.id ? { ...r, quantity: Math.min(item.quantity, Math.max(1, Number(e.target.value))) } : r))}
+                                  max={availableQuantity}
+                                  value={selectedRow?.quantity || 1}
+                                  onChange={e => setReturnedItems(prev => prev.map(r => {
+                                    if (r.sourceLineKey !== lineKey) return r;
+                                    const quantity = Math.min(availableQuantity, Math.max(1, Number(e.target.value)));
+                                    return { ...r, quantity, lineEffectiveTotal: getEffectiveLineTotal(r, quantity) };
+                                  }))}
                                   className="w-14 p-1 border border-slate-200 rounded text-xs text-center"
                                 />
-                                <span className="text-xs text-slate-400">/ {item.quantity}</span>
+                                <span className="text-xs text-slate-400">/ {availableQuantity}</span>
                               </div>
                             )}
                           </div>
@@ -1695,7 +1911,15 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                       <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-30 max-h-36 overflow-y-auto">
                         {noSaleProductResults.map(p => (
                           <button key={p.id} onMouseDown={() => handleAddNoSaleReturnItem(p)} className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors text-left text-sm">
-                            <span className="text-slate-700">{p.name}</span>
+                            <div>
+                              <span className="text-slate-700">{p.name}</span>
+                              <span className="text-xs text-slate-400 ml-2">{p.sku || '-'}</span>
+                              {(p.size || p.color) && (
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  {[p.size ? `Size: ${p.size}` : '', p.color ? `Color: ${p.color}` : ''].filter(Boolean).join(' • ')}
+                                </p>
+                              )}
+                            </div>
                             <span className="text-xs text-slate-500">{fmtCurrency(p.price)}</span>
                           </button>
                         ))}
@@ -1713,16 +1937,36 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                                 {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
                               </p>
                             )}
-                            <p className="text-xs text-slate-400">{fmtCurrency(item.price)}</p>
+                            <p className="text-xs text-slate-400">Manual Return Price (unit): {fmtCurrency(item.manualReturnUnitPrice ?? 0)}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             <input
                               type="number"
                               min={1}
                               value={item.quantity}
-                              onChange={e => setNoSaleReturnItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(1, Number(e.target.value)) } : i))}
+                              onChange={e => setNoSaleReturnItems(prev => prev.map(i => i.id === item.id ? {
+                                ...i,
+                                quantity: Math.max(1, Number(e.target.value)),
+                                lineEffectiveTotal: getEffectiveLineTotal(i, Math.max(1, Number(e.target.value)))
+                              } : i))}
                               className="w-14 p-1 border border-slate-200 rounded text-xs text-center"
                             />
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={item.manualReturnUnitPrice ?? 0}
+                              onChange={e => setNoSaleReturnItems(prev => prev.map(i => i.id === item.id ? {
+                                ...i,
+                                manualReturnUnitPrice: Math.max(0, Number(e.target.value)),
+                                effectiveUnitPrice: Math.max(0, Number(e.target.value)),
+                                lineEffectiveTotal: round2(Math.max(0, Number(e.target.value)) * i.quantity),
+                              } : i))}
+                              className="w-28 p-1 border border-slate-200 rounded text-xs text-right"
+                              placeholder="Return Price"
+                              title="Manual return unit price"
+                            />
+                            <span className="text-xs font-semibold text-red-600 w-24 text-right">-{fmtCurrency(getEffectiveLineTotal(item, item.quantity))}</span>
                             <button onClick={() => setNoSaleReturnItems(prev => prev.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600"><X size={14} /></button>
                           </div>
                         </div>
@@ -1754,6 +1998,11 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                           <div>
                             <span className="text-slate-700">{p.name}</span>
                             <span className="text-xs text-slate-400 ml-2">{p.sku}</span>
+                            {(p.size || p.color) && (
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                {[p.size ? `Size: ${p.size}` : '', p.color ? `Color: ${p.color}` : ''].filter(Boolean).join(' • ')}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <span className="font-bold text-slate-800">{fmtCurrency(p.price)}</span>
@@ -1767,7 +2016,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
 
                 {exchangeNewItems.length > 0 && (
                   <div className="space-y-1">
-                    {exchangeNewItems.map(item => (
+                    {exchangeNewItemsPriced.map(item => (
                       <div key={item.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100">
                         <div>
                           <p className="text-sm font-medium text-slate-800">{item.name}</p>
@@ -1776,7 +2025,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                               {[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(' • ')}
                             </p>
                           )}
-                          <p className="text-xs text-slate-400">{fmtCurrency(item.price)} each</p>
+                          <p className="text-xs text-slate-400">List: {fmtCurrency(item.price)} | Item Disc: -{fmtCurrency(item.unitItemDiscount || 0)} | Bill Share: -{fmtCurrency(item.unitBillDiscountShare || 0)} | Effective: {fmtCurrency(item.effectiveUnitPrice || item.price)} each</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex items-center bg-slate-100 rounded p-0.5">
@@ -1784,7 +2033,17 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                             <span className="text-xs font-bold w-6 text-center">{item.quantity}</span>
                             <button onClick={() => setExchangeNewItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))} className="p-1 hover:bg-white rounded"><Plus size={10} /></button>
                           </div>
-                          <span className="text-sm font-bold text-slate-800 w-24 text-right">{fmtCurrency(item.price * item.quantity)}</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={item.price}
+                            step="0.01"
+                            value={item.unitItemDiscount || 0}
+                            onChange={e => setExchangeNewItems(prev => prev.map(i => i.id === item.id ? { ...i, unitItemDiscount: Math.min(i.price, Math.max(0, Number(e.target.value))) } : i))}
+                            className="w-24 p-1 border border-slate-200 rounded text-xs text-right"
+                            title="Per-unit item discount"
+                          />
+                          <span className="text-sm font-bold text-slate-800 w-24 text-right">{fmtCurrency(item.lineEffectiveTotal || 0)}</span>
                           <button onClick={() => setExchangeNewItems(prev => prev.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600"><X size={14} /></button>
                         </div>
                       </div>
@@ -1808,6 +2067,28 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
               {/* Exchange Summary */}
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <h4 className="text-sm font-bold text-slate-700 mb-3">Exchange Summary</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+                  <select
+                    value={exchangeBillDiscountMode}
+                    onChange={e => setExchangeBillDiscountMode(e.target.value as DiscountMode)}
+                    className="p-2 border border-slate-200 rounded-lg text-xs"
+                  >
+                    <option value="amount">Exchange Bill Discount (Amount)</option>
+                    <option value="percentage">Exchange Bill Discount (%)</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={exchangeBillDiscountValue}
+                    onChange={e => setExchangeBillDiscountValue(Math.max(0, Number(e.target.value)))}
+                    className="p-2 border border-slate-200 rounded-lg text-xs text-right"
+                    placeholder="Discount"
+                  />
+                  <div className="text-xs text-slate-500 flex items-center justify-end">
+                    Applied: -{fmtCurrency(exchangeNewBillDiscount)}
+                  </div>
+                </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between text-slate-500">
                     <span>Returned Items Value</span>
@@ -1843,6 +2124,22 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   <option value="MintPay">💰 MintPay</option>
                 </select>
               </div>
+              {exchangeDifference < 0 && (
+                <div className="mb-3">
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Refund Method</label>
+                  <select
+                    value={exchangeRefundMethod}
+                    onChange={e => setExchangeRefundMethod(e.target.value as ExchangeSettlementMethod)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white text-slate-700 text-sm font-medium"
+                  >
+                    <option value="Cash">💵 Cash</option>
+                    <option value="Card">💳 Card</option>
+                    <option value="PayHere">📱 PayHere</option>
+                    <option value="Online Transfer">🌐 Online Transfer</option>
+                    <option value="MintPay">💰 MintPay</option>
+                  </select>
+                </div>
+              )}
               <div className="flex justify-between items-center">
                 <button onClick={() => { setIsExchangeMode(false); resetExchangeState(); }} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm">Cancel</button>
                 <button
@@ -1891,7 +2188,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                     <div key={idx} className="text-sm py-1">
                       <div className="flex justify-between">
                         <span className="text-slate-600">{item.quantity}x {item.name}</span>
-                        <span className="text-red-500">-{fmtCurrency(item.price * item.quantity)}</span>
+                        <span className="text-red-500">-{fmtCurrency(item.lineEffectiveTotal ?? ((item.effectiveUnitPrice ?? item.price) * item.quantity))}</span>
                       </div>
                       {(item.size || item.color) && (
                         <div className="flex gap-1 mt-0.5 ml-0">
@@ -1912,7 +2209,7 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                     <div key={idx} className="text-sm py-1">
                       <div className="flex justify-between">
                         <span className="text-slate-600">{item.quantity}x {item.name}</span>
-                        <span className="text-emerald-600">{fmtCurrency(item.price * item.quantity)}</span>
+                        <span className="text-emerald-600">{fmtCurrency(item.lineEffectiveTotal ?? ((item.effectiveUnitPrice ?? item.price) * item.quantity))}</span>
                       </div>
                       {(item.size || item.color) && (
                         <div className="flex gap-1 mt-0.5 ml-0">
@@ -1935,10 +2232,22 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   <span>New Items Value</span>
                   <span>{fmtCurrency(lastExchange.newTotal)}</span>
                 </div>
+                {lastExchange.exchangeBillDiscount ? (
+                  <div className="flex justify-between text-sm text-slate-500">
+                    <span>Exchange Bill Discount</span>
+                    <span>-{fmtCurrency(lastExchange.exchangeBillDiscount)}</span>
+                  </div>
+                ) : null}
                 <div className={`flex justify-between text-lg font-bold pt-2 border-t border-slate-200 mt-2 ${lastExchange.difference >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                   <span>{lastExchange.difference >= 0 ? 'Customer Pays' : 'Customer Credit'}</span>
                   <span>{fmtCurrency(Math.abs(lastExchange.difference))}</span>
                 </div>
+                {lastExchange.refundMethod ? (
+                  <div className="flex justify-between text-xs text-slate-500">
+                    <span>Refund Method</span>
+                    <span>{lastExchange.refundMethod}</span>
+                  </div>
+                ) : null}
               </div>
 
               {lastExchange.description && (

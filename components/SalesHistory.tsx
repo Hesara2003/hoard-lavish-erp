@@ -103,7 +103,7 @@ const SalesHistory: React.FC = () => {
 
   // --- Item-wise sold quantities ---
   const itemStats = useMemo(() => {
-    const stats = new Map<string, { name: string; quantity: number; revenue: number; sku: string }>();
+    const stats = new Map<string, { name: string; quantity: number; revenue: number; sku: string; size?: string; color?: string }>();
     
     itemFilteredItems.forEach(item => {
       if (item.recordType === 'sale') {
@@ -113,7 +113,9 @@ const SalesHistory: React.FC = () => {
             name: cartItem.name, 
             quantity: 0, 
             revenue: 0, 
-            sku: cartItem.sku 
+            sku: cartItem.sku,
+            size: cartItem.size,
+            color: cartItem.color
           };
           stats.set(cartItem.id, {
             ...existing,
@@ -128,12 +130,15 @@ const SalesHistory: React.FC = () => {
             name: cartItem.name, 
             quantity: 0, 
             revenue: 0, 
-            sku: cartItem.sku 
+            sku: cartItem.sku,
+            size: cartItem.size,
+            color: cartItem.color
           };
+          const lineRevenue = cartItem.lineEffectiveTotal ?? ((cartItem.effectiveUnitPrice ?? cartItem.price) * cartItem.quantity);
           stats.set(cartItem.id, {
             ...existing,
             quantity: existing.quantity + cartItem.quantity,
-            revenue: existing.revenue + (cartItem.price * cartItem.quantity)
+            revenue: existing.revenue + lineRevenue
           });
         });
       }
@@ -554,6 +559,13 @@ const SalesHistory: React.FC = () => {
                   <div className="flex justify-between items-start mb-1">
                     <h4 className="font-medium text-slate-900 text-sm line-clamp-2 flex-1">{item.name}</h4>
                   </div>
+                  {(item.size || item.color) && (
+                    <div className="mb-1">
+                      <p className="text-xs text-slate-600">
+                        {[item.size, item.color].filter(Boolean).join(' / ')}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">Qty: <span className="font-bold text-slate-900">{item.quantity}</span></span>
                     <span className="text-emerald-600 font-bold">{fmtCurrency(item.revenue)}</span>
@@ -683,8 +695,8 @@ const SalesHistory: React.FC = () => {
                           )}
                         </td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{item.quantity}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{fmtCurrency(item.price)}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#ef4444', fontWeight: 500 }}>-{fmtCurrency(item.price * item.quantity)}</td>
+                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{fmtCurrency(item.effectiveUnitPrice ?? item.price)}</td>
+                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#ef4444', fontWeight: 500 }}>-{fmtCurrency(item.lineEffectiveTotal ?? ((item.effectiveUnitPrice ?? item.price) * item.quantity))}</td>
                       </tr>
                     ))}
                     <tr>
@@ -717,8 +729,8 @@ const SalesHistory: React.FC = () => {
                           )}
                         </td>
                         <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{item.quantity}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{fmtCurrency(item.price)}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#16a34a', fontWeight: 500 }}>{fmtCurrency(item.price * item.quantity)}</td>
+                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#64748b' }}>{fmtCurrency(item.effectiveUnitPrice ?? item.price)}</td>
+                        <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', color: '#16a34a', fontWeight: 500 }}>{fmtCurrency(item.lineEffectiveTotal ?? ((item.effectiveUnitPrice ?? item.price) * item.quantity))}</td>
                       </tr>
                     ))}
                     <tr>
@@ -730,10 +742,26 @@ const SalesHistory: React.FC = () => {
 
                 {/* Net difference */}
                 <div style={{ maxWidth: 260, marginLeft: 'auto', borderTop: '2px solid #e2e8f0', paddingTop: 12 }}>
+                  {selectedExchange.exchangeBillDiscount ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginBottom: 6 }}>
+                      <span>Exchange Bill Discount</span>
+                      <span>-{fmtCurrency(selectedExchange.exchangeBillDiscount)}</span>
+                    </div>
+                  ) : null}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16, color: selectedExchange.difference >= 0 ? '#16a34a' : '#ef4444' }}>
                     <span>{selectedExchange.difference >= 0 ? 'Customer Paid' : 'Store Refunded'}</span>
                     <span>{fmtCurrency(Math.abs(selectedExchange.difference))}</span>
                   </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                    <span>Settlement</span>
+                    <span>{selectedExchange.settlementType || (selectedExchange.difference > 0 ? 'CUSTOMER_PAYS' : selectedExchange.difference < 0 ? 'STORE_REFUND' : 'EVEN')}</span>
+                  </div>
+                  {selectedExchange.refundMethod ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                      <span>Refund Method</span>
+                      <span>{selectedExchange.refundMethod}</span>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div style={{ textAlign: 'center', marginTop: 32, paddingTop: 16, borderTop: '1px solid #f1f5f9', fontSize: 11, color: '#94a3b8' }}>

@@ -1,8 +1,14 @@
 import { supabase } from './supabaseClient';
-import type { Branch, Product, Customer, SalesRecord, StockMovement, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer } from '../types';
+import type { Branch, Product, Customer, SalesRecord, StockMovement, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer, ExchangeRecord } from '../types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const asUuidOrNull = (value?: string): string | null => (value && UUID_PATTERN.test(value) ? value : null);
+const normalizeBranchName = (name?: string): string => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const getDefaultThermalPrinterForBranch = (name?: string): string => normalizeBranchName(name) === 'mountlavinia' ? 'XP - Q80B' : '';
+const resolveThermalPrinterName = (name?: string, configured?: string): string => {
+    const normalized = (configured || '').trim();
+    return normalized || getDefaultThermalPrinterForBranch(name);
+};
 
 // ============================================================
 // BRANCHES
@@ -15,22 +21,30 @@ export async function fetchBranches(): Promise<Branch[]> {
         name: r.name,
         address: r.address,
         phone: r.phone,
-        thermalPrinterName: r.thermal_printer_name || '',
+        thermalPrinterName: resolveThermalPrinterName(r.name, r.thermal_printer_name),
         barcodePrinterName: r.barcode_printer_name || '',
     }));
 }
 
 export async function insertBranch(branch: Omit<Branch, 'id'> & { id?: string }): Promise<Branch> {
+    const thermalPrinterName = resolveThermalPrinterName(branch.name, branch.thermalPrinterName);
     const { data, error } = await supabase.from('branches').insert({
         ...(branch.id ? { id: branch.id } : {}),
         name: branch.name,
         address: branch.address,
         phone: branch.phone,
-        thermal_printer_name: branch.thermalPrinterName || '',
+        thermal_printer_name: thermalPrinterName,
         barcode_printer_name: branch.barcodePrinterName || '',
     }).select().single();
     if (error) throw error;
-    return { id: data.id, name: data.name, address: data.address, phone: data.phone, thermalPrinterName: data.thermal_printer_name || '', barcodePrinterName: data.barcode_printer_name || '' };
+    return {
+        id: data.id,
+        name: data.name,
+        address: data.address,
+        phone: data.phone,
+        thermalPrinterName: resolveThermalPrinterName(data.name, data.thermal_printer_name),
+        barcodePrinterName: data.barcode_printer_name || '',
+    };
 }
 
 export async function updateBranch(id: string, updates: Partial<Branch>): Promise<void> {
@@ -294,6 +308,11 @@ export async function completeSaleRPC(sale: SalesRecord): Promise<string> {
             price: item.price,
             cost_price: item.costPrice,
             discount: item.discount ?? 0,
+            sku: item.sku ?? '',
+            size: item.size ?? '',
+            color: item.color ?? '',
+            barcode: item.barcode ?? '',
+            barcode2: item.barcode2 ?? '',
         })),
     };
 
@@ -339,7 +358,7 @@ export const mapSale = (r: any): SalesRecord => ({
     date: r.date,
     items: (r.sale_items ?? r.items ?? []).map((si: any) => ({
         id: (si.product_id || si.id) as string,
-        name: (si.product_name || si.name) as string,
+        name: (si.product_name || si.name || si.products?.name) as string,
         quantity: si.quantity as number,
         price: Number(si.price),
         costPrice: Number(si.cost_price || si.costPrice),
@@ -349,7 +368,11 @@ export const mapSale = (r: any): SalesRecord => ({
         stock: 0,
         branchStock: {},
         minStockLevel: 0,
-        sku: '',
+        sku: si.sku || si.products?.sku || '',
+        size: si.size || si.products?.size || '',
+        color: si.color || si.products?.color || '',
+        barcode: si.barcode || si.products?.barcode || '',
+        barcode2: si.barcode2 || si.products?.barcode2 || '',
         description: '',
     })),
     subtotal: Number(r.subtotal),
@@ -369,10 +392,170 @@ export const mapSale = (r: any): SalesRecord => ({
 export async function fetchSales(): Promise<SalesRecord[]> {
     const { data, error } = await supabase
         .from('sales')
-        .select('*, sale_items(*)')
+        .select('*, sale_items(*, products(id, name, sku, size, color, barcode, barcode2))')
         .order('date', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(mapSale);
+}
+
+// ============================================================
+// EXCHANGES
+// ============================================================
+export const mapExchange = (r: any): ExchangeRecord => {
+    const items = r.exchange_items ?? [];
+    const returnedItems = items
+        .filter((i: any) => i.item_type === 'RETURN')
+        .map((i: any) => ({
+            id: (i.product_id || i.id) as string,
+            name: i.product_name as string,
+            sku: i.sku || '',
+            quantity: Number(i.quantity),
+            price: Number(i.price ?? 0),
+            costPrice: Number(i.cost_price ?? 0),
+            discount: Number(i.unit_item_discount ?? 0),
+            size: i.size ?? '',
+            color: i.color ?? '',
+            category: '',
+            brand: '',
+            stock: 0,
+            branchStock: {},
+            minStockLevel: 0,
+            description: '',
+            sourceType: i.source_type ?? undefined,
+            sourceSaleId: i.source_sale_id ?? undefined,
+            sourceInvoiceNumber: i.source_invoice_number ?? undefined,
+            sourceSaleItemIndex: i.source_sale_item_index ?? undefined,
+            sourceLineKey: i.source_line_key ?? undefined,
+            originalQuantity: i.original_quantity ?? undefined,
+            manualReturnUnitPrice: i.manual_return_unit_price !== null && i.manual_return_unit_price !== undefined ? Number(i.manual_return_unit_price) : undefined,
+            unitItemDiscount: Number(i.unit_item_discount ?? 0),
+            unitBillDiscountShare: Number(i.unit_bill_discount_share ?? 0),
+            effectiveUnitPrice: Number(i.effective_unit_price ?? 0),
+            lineEffectiveTotal: Number(i.line_effective_total ?? 0),
+        }));
+
+    const newItems = items
+        .filter((i: any) => i.item_type === 'NEW')
+        .map((i: any) => ({
+            id: (i.product_id || i.id) as string,
+            name: i.product_name as string,
+            sku: i.sku || '',
+            quantity: Number(i.quantity),
+            price: Number(i.price ?? 0),
+            costPrice: Number(i.cost_price ?? 0),
+            discount: Number(i.unit_item_discount ?? 0),
+            size: i.size ?? '',
+            color: i.color ?? '',
+            category: '',
+            brand: '',
+            stock: 0,
+            branchStock: {},
+            minStockLevel: 0,
+            description: '',
+            sourceType: i.source_type ?? undefined,
+            sourceSaleId: i.source_sale_id ?? undefined,
+            sourceInvoiceNumber: i.source_invoice_number ?? undefined,
+            sourceSaleItemIndex: i.source_sale_item_index ?? undefined,
+            sourceLineKey: i.source_line_key ?? undefined,
+            originalQuantity: i.original_quantity ?? undefined,
+            manualReturnUnitPrice: i.manual_return_unit_price !== null && i.manual_return_unit_price !== undefined ? Number(i.manual_return_unit_price) : undefined,
+            unitItemDiscount: Number(i.unit_item_discount ?? 0),
+            unitBillDiscountShare: Number(i.unit_bill_discount_share ?? 0),
+            effectiveUnitPrice: Number(i.effective_unit_price ?? 0),
+            lineEffectiveTotal: Number(i.line_effective_total ?? 0),
+        }));
+
+    return {
+        id: r.id,
+        exchangeNumber: r.exchange_number,
+        date: r.date,
+        originalSaleId: r.original_sale_id ?? undefined,
+        originalInvoiceNumber: r.original_invoice_number ?? undefined,
+        returnedItems,
+        newItems,
+        returnedTotal: Number(r.returned_total ?? 0),
+        newTotal: Number(r.new_total ?? 0),
+        difference: Number(r.difference ?? 0),
+        paymentMethod: r.payment_method,
+        refundMethod: r.refund_method ?? undefined,
+        settlementType: r.settlement_type ?? undefined,
+        exchangeBillDiscount: Number(r.exchange_bill_discount ?? 0),
+        customerId: r.customer_id ?? undefined,
+        customerName: r.customer_name ?? undefined,
+        branchId: r.branch_id,
+        branchName: r.branch_name,
+        description: r.description ?? '',
+    };
+};
+
+export async function fetchExchanges(): Promise<ExchangeRecord[]> {
+    const { data, error } = await supabase
+        .from('exchanges')
+        .select('*, exchange_items(*)')
+        .order('date', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapExchange);
+}
+
+export async function insertExchange(exchange: ExchangeRecord): Promise<string> {
+    const { data, error } = await supabase
+        .from('exchanges')
+        .insert({
+            exchange_number: exchange.exchangeNumber,
+            date: exchange.date,
+            original_sale_id: asUuidOrNull(exchange.originalSaleId),
+            original_invoice_number: exchange.originalInvoiceNumber ?? null,
+            returned_total: exchange.returnedTotal,
+            new_total: exchange.newTotal,
+            difference: exchange.difference,
+            payment_method: exchange.paymentMethod,
+            refund_method: exchange.refundMethod ?? null,
+            settlement_type: exchange.settlementType ?? null,
+            exchange_bill_discount: exchange.exchangeBillDiscount ?? 0,
+            customer_id: asUuidOrNull(exchange.customerId),
+            customer_name: exchange.customerName ?? null,
+            branch_id: exchange.branchId,
+            branch_name: exchange.branchName,
+            description: exchange.description ?? '',
+        })
+        .select('id')
+        .single();
+    if (error) throw error;
+
+    const exchangeId = data.id as string;
+    const itemRows = [
+        ...exchange.returnedItems.map(item => ({ item_type: 'RETURN', item })),
+        ...exchange.newItems.map(item => ({ item_type: 'NEW', item })),
+    ].map(({ item_type, item }) => ({
+        exchange_id: exchangeId,
+        item_type,
+        product_id: asUuidOrNull(item.id),
+        product_name: item.name,
+        sku: item.sku ?? '',
+        size: item.size ?? '',
+        color: item.color ?? '',
+        quantity: item.quantity,
+        price: item.price,
+        cost_price: item.costPrice ?? 0,
+        unit_item_discount: item.unitItemDiscount ?? item.discount ?? 0,
+        unit_bill_discount_share: item.unitBillDiscountShare ?? 0,
+        effective_unit_price: item.effectiveUnitPrice ?? Math.max(0, item.price - (item.unitItemDiscount ?? item.discount ?? 0) - (item.unitBillDiscountShare ?? 0)),
+        line_effective_total: item.lineEffectiveTotal ?? 0,
+        source_type: item.sourceType ?? null,
+        source_sale_id: asUuidOrNull(item.sourceSaleId),
+        source_invoice_number: item.sourceInvoiceNumber ?? null,
+        source_sale_item_index: item.sourceSaleItemIndex ?? null,
+        source_line_key: item.sourceLineKey ?? null,
+        original_quantity: item.originalQuantity ?? null,
+        manual_return_unit_price: item.manualReturnUnitPrice ?? null,
+    }));
+
+    if (itemRows.length > 0) {
+        const { error: itemsError } = await supabase.from('exchange_items').insert(itemRows);
+        if (itemsError) throw itemsError;
+    }
+
+    return exchangeId;
 }
 
 // ============================================================
@@ -510,6 +693,25 @@ export async function insertSupplierTransaction(txn: SupplierTransaction): Promi
         reference: txn.reference,
         notes: txn.notes,
     });
+    if (error) throw error;
+}
+
+export async function updateSupplierTransaction(id: string, updates: Partial<SupplierTransaction>): Promise<void> {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.supplierId !== undefined) dbUpdates.supplier_id = updates.supplierId;
+    if (updates.supplierName !== undefined) dbUpdates.supplier_name = updates.supplierName;
+    if (updates.date !== undefined) dbUpdates.date = updates.date;
+    if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
+    if (updates.type !== undefined) dbUpdates.type = updates.type;
+    if (updates.reference !== undefined) dbUpdates.reference = updates.reference;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+
+    const { error } = await supabase.from('supplier_transactions').update(dbUpdates).eq('id', id);
+    if (error) throw error;
+}
+
+export async function deleteSupplierTransaction(id: string): Promise<void> {
+    const { error } = await supabase.from('supplier_transactions').delete().eq('id', id);
     if (error) throw error;
 }
 

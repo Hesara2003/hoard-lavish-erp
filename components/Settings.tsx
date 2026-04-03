@@ -7,6 +7,15 @@ import { User, Role, Product } from '../types';
 const CSV_COLUMNS = ['name','category','brand','sku','price','costPrice','initialStock','minStockLevel','description','color','size','barcode','barcode2'];
 const CSV_REQUIRED = ['name','category','brand','sku','price','costPrice'];
 const CSV_SAMPLE = ['White Polo Shirt','Shirts','Polo','SKU-001','1500','900','10','5','Classic white polo shirt','White','M','2001234567890',''];
+const MOUNT_LAVINIA_DEFAULT_PRINTER = 'XP - Q80B';
+
+const normalizeBranchName = (name?: string) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const isMountLaviniaBranch = (name?: string) => normalizeBranchName(name) === 'mountlavinia';
+const getThermalPrinterForBranch = (branch: { name?: string; thermalPrinterName?: string }) => {
+  const configured = (branch.thermalPrinterName || '').trim();
+  if (configured) return configured;
+  return isMountLaviniaBranch(branch.name) ? MOUNT_LAVINIA_DEFAULT_PRINTER : '';
+};
 
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
@@ -57,7 +66,7 @@ const Settings: React.FC = () => {
     currencySymbol: settings.currencySymbol,
     taxRate: settings.taxRate * 100,
     enableLowStockAlerts: settings.enableLowStockAlerts,
-    thermalPrinterName: currentBranch.thermalPrinterName || '',
+    thermalPrinterName: getThermalPrinterForBranch(currentBranch),
     barcodePrinterName: currentBranch.barcodePrinterName || '',
   });
   const [generalSaved, setGeneralSaved] = useState(false);
@@ -66,7 +75,7 @@ const Settings: React.FC = () => {
   useEffect(() => {
     setGeneralForm(prev => ({
       ...prev,
-      thermalPrinterName: currentBranch.thermalPrinterName || '',
+      thermalPrinterName: getThermalPrinterForBranch(currentBranch),
       barcodePrinterName: currentBranch.barcodePrinterName || '',
     }));
   }, [currentBranch.id]);
@@ -83,6 +92,8 @@ const Settings: React.FC = () => {
   }, []);
 
   const handleSaveGeneral = () => {
+    const thermalPrinterNameToSave = (generalForm.thermalPrinterName || '').trim() || (isMountLaviniaBranch(currentBranch.name) ? MOUNT_LAVINIA_DEFAULT_PRINTER : '');
+
     updateSettings({
       storeName: generalForm.storeName,
       currencySymbol: generalForm.currencySymbol,
@@ -91,9 +102,10 @@ const Settings: React.FC = () => {
     });
     // Save printer names per-branch
     updateBranch(currentBranch.id, {
-      thermalPrinterName: generalForm.thermalPrinterName,
+      thermalPrinterName: thermalPrinterNameToSave,
       barcodePrinterName: generalForm.barcodePrinterName,
     });
+    setGeneralForm(prev => ({ ...prev, thermalPrinterName: thermalPrinterNameToSave }));
     setGeneralSaved(true);
     setTimeout(() => setGeneralSaved(false), 2000);
   };

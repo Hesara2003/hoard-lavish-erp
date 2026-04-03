@@ -7,10 +7,54 @@ import { parseBusinessDate } from '../utils/dateTime';
 const CUR = 'LKR';
 const fmtCurrency = (n: number) => `${CUR} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const renderTransactionNotes = (notes: string) => {
+  const normalized = (notes || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return <span className="text-slate-400">-</span>;
+
+  const detailLines = normalized
+    .split('\n')
+    .flatMap(line => line.split(' | '))
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="space-y-1.5 text-slate-600">
+      {detailLines.map((line, index) => {
+        if (/^Items Added:/i.test(line) || /^Items:/i.test(line)) {
+          return (
+            <div key={`${line}-${index}`} className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+              {line}
+            </div>
+          );
+        }
+
+        const [label, ...rest] = line.split(':');
+        if (rest.length > 0 && label.length < 24 && !line.includes(' @ ') && !line.includes(' = ')) {
+          return (
+            <div key={`${line}-${index}`} className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-semibold text-slate-500">{label}:</span>
+              <span className="text-slate-600">{rest.join(':').trim()}</span>
+            </div>
+          );
+        }
+
+        return (
+          <div key={`${line}-${index}`} className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-xs leading-5 text-slate-600">
+            {line}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // Inventory line item for supplier purchases
 interface InventoryLineItem {
   productId: string;
   productName: string;
+  sku?: string;
+  size?: string;
+  color?: string;
   quantity: number;
   unitPrice: number;
 }
@@ -42,7 +86,7 @@ const ConfirmDialog: React.FC<{
 type SupplierTab = 'LIST' | 'EXPENSE' | 'HISTORY' | 'DAMAGED';
 
 const Suppliers: React.FC = () => {
-  const { suppliers, products, addSupplier, updateSupplier, deleteSupplier, supplierTransactions, addSupplierTransaction, damagedGoods, addDamagedGood, deleteDamagedGood, currentUser } = useStore();
+  const { suppliers, products, addSupplier, updateSupplier, deleteSupplier, supplierTransactions, addSupplierTransaction, updateSupplierTransaction, deleteSupplierTransaction, adjustStock, damagedGoods, addDamagedGood, deleteDamagedGood, currentUser } = useStore();
   const isAdmin = currentUser?.role === 'ADMIN';
   const [activeTab, setActiveTab] = useState<SupplierTab>('LIST');
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,6 +97,15 @@ const Suppliers: React.FC = () => {
 
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [transactionDeleteConfirm, setTransactionDeleteConfirm] = useState<{ id: string; label: string } | null>(null);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [editingTransactionForm, setEditingTransactionForm] = useState({
+    supplierId: '',
+    amount: '',
+    reference: '',
+    notes: '',
+    date: new Date().toISOString().split('T')[0]
+  });
 
   // 1. Inventory line items for the expense form
   const [inventoryItems, setInventoryItems] = useState<InventoryLineItem[]>([]);
@@ -114,9 +167,51 @@ const Suppliers: React.FC = () => {
     }
   };
 
+  const handleStartEditTransaction = (transaction: SupplierTransaction) => {
+    const parsedDate = parseBusinessDate(transaction.date);
+    setEditingTransactionId(transaction.id);
+    setEditingTransactionForm({
+      supplierId: transaction.supplierId,
+      amount: String(transaction.amount),
+      reference: transaction.reference || '',
+      notes: transaction.notes || '',
+      date: parsedDate.toISOString().split('T')[0]
+    });
+  };
+
+  const handleCancelEditTransaction = () => {
+    setEditingTransactionId(null);
+  };
+
+  const handleSaveEditTransaction = () => {
+    if (!editingTransactionId || !editingTransactionForm.supplierId || !editingTransactionForm.amount) return;
+    const supplier = suppliers.find(s => s.id === editingTransactionForm.supplierId);
+    const amount = Number(editingTransactionForm.amount);
+    if (!supplier || Number.isNaN(amount) || amount <= 0) return;
+
+    updateSupplierTransaction(editingTransactionId, {
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      amount,
+      reference: editingTransactionForm.reference,
+      notes: editingTransactionForm.notes,
+      date: new Date(editingTransactionForm.date).toISOString()
+    });
+    setEditingTransactionId(null);
+  };
+
+  const handleDeleteTransaction = () => {
+    if (!transactionDeleteConfirm) return;
+    deleteSupplierTransaction(transactionDeleteConfirm.id);
+    if (editingTransactionId === transactionDeleteConfirm.id) {
+      setEditingTransactionId(null);
+    }
+    setTransactionDeleteConfirm(null);
+  };
+
   // 1. Inventory line item helpers
   const handleAddInventoryItem = () => {
-    setInventoryItems(prev => [...prev, { productId: '', productName: '', quantity: 1, unitPrice: 0 }]);
+    setInventoryItems(prev => [...prev, { productId: '', productName: '', sku: '', size: '', color: '', quantity: 1, unitPrice: 0 }]);
   };
 
   const handleUpdateInventoryItem = (idx: number, field: keyof InventoryLineItem, value: string | number) => {
@@ -124,7 +219,15 @@ const Suppliers: React.FC = () => {
       if (i !== idx) return item;
       if (field === 'productId') {
         const prod = products.find(p => p.id === value);
-        return { ...item, productId: value as string, productName: prod?.name || '', unitPrice: prod?.costPrice || 0 };
+        return {
+          ...item,
+          productId: value as string,
+          productName: prod?.name || '',
+          sku: prod?.sku || '',
+          size: prod?.size || '',
+          color: prod?.color || '',
+          unitPrice: prod?.costPrice || 0
+        };
       }
       return { ...item, [field]: value };
     }));
@@ -143,10 +246,21 @@ const Suppliers: React.FC = () => {
       // Build notes with inventory items if any
       let notesWithInventory = expenseForm.notes;
       if (inventoryItems.length > 0) {
-        const itemLines = inventoryItems.filter(i => i.productName).map(i =>
-          `${i.quantity}x ${i.productName} @ ${fmtCurrency(i.unitPrice)} = ${fmtCurrency(i.quantity * i.unitPrice)}`
-        ).join(' | ');
-        notesWithInventory = notesWithInventory ? `${notesWithInventory} — Items: ${itemLines}` : `Items: ${itemLines}`;
+        const itemLines = inventoryItems
+          .filter(i => i.productName)
+          .map(i => {
+            const variationParts = [
+              i.sku ? `SKU: ${i.sku}` : '',
+              i.size ? `Size: ${i.size}` : '',
+              i.color ? `Color: ${i.color}` : ''
+            ].filter(Boolean);
+            const variationText = variationParts.length ? ` (${variationParts.join(', ')})` : '';
+            return `- ${i.productName}${variationText} | Qty: ${i.quantity} | Stock In: +${i.quantity} | Unit: ${fmtCurrency(i.unitPrice)} | Line: ${fmtCurrency(i.quantity * i.unitPrice)}`;
+          })
+          .join('\n');
+
+        const detailsBlock = `Items Added:\n${itemLines}`;
+        notesWithInventory = notesWithInventory ? `${notesWithInventory}\n${detailsBlock}` : detailsBlock;
       }
 
       addSupplierTransaction({
@@ -159,6 +273,18 @@ const Suppliers: React.FC = () => {
         reference: expenseForm.reference,
         notes: notesWithInventory
       });
+
+      inventoryItems
+        .filter(item => item.productId && item.quantity > 0)
+        .forEach(item => {
+          adjustStock(
+            item.productId,
+            item.quantity,
+            'IN',
+            `Supplier purchase${expenseForm.reference ? ` #${expenseForm.reference}` : ''}${item.size || item.color ? ` (${[item.size ? `Size: ${item.size}` : '', item.color ? `Color: ${item.color}` : ''].filter(Boolean).join(', ')})` : ''}`
+          );
+        });
+
       setExpenseForm({
         supplierId: '',
         amount: '',
@@ -494,21 +620,109 @@ const Suppliers: React.FC = () => {
                   <th className="p-4">Reference</th>
                   <th className="p-4">Amount</th>
                   <th className="p-4">Notes</th>
+                  {isAdmin && <th className="p-4 text-center">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredTransactions.map(t => (
                   <tr key={t.id} className="hover:bg-slate-50">
-                    <td className="p-4 text-slate-500">{parseBusinessDate(t.date).toLocaleDateString()}</td>
-                    <td className="p-4 font-medium text-slate-900">{t.supplierName}</td>
-                    <td className="p-4 text-slate-600 font-mono">{t.reference || '-'}</td>
-                    <td className="p-4 font-bold text-slate-900">{fmtCurrency(t.amount)}</td>
-                    <td className="p-4 text-slate-500 max-w-xs truncate">{t.notes}</td>
+                    <td className="p-4 text-slate-500">
+                      {editingTransactionId === t.id ? (
+                        <input
+                          type="date"
+                          className="w-full min-w-36 p-1.5 border border-slate-200 rounded-lg outline-none"
+                          value={editingTransactionForm.date}
+                          onChange={e => setEditingTransactionForm(prev => ({ ...prev, date: e.target.value }))}
+                        />
+                      ) : parseBusinessDate(t.date).toLocaleDateString()}
+                    </td>
+                    <td className="p-4 font-medium text-slate-900">
+                      {editingTransactionId === t.id ? (
+                        <select
+                          className="w-full min-w-40 p-1.5 border border-slate-200 rounded-lg outline-none bg-white"
+                          value={editingTransactionForm.supplierId}
+                          onChange={e => setEditingTransactionForm(prev => ({ ...prev, supplierId: e.target.value }))}
+                        >
+                          <option value="">-- Choose Supplier --</option>
+                          {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      ) : t.supplierName}
+                    </td>
+                    <td className="p-4 text-slate-600 font-mono">
+                      {editingTransactionId === t.id ? (
+                        <input
+                          type="text"
+                          className="w-full min-w-36 p-1.5 border border-slate-200 rounded-lg outline-none"
+                          value={editingTransactionForm.reference}
+                          onChange={e => setEditingTransactionForm(prev => ({ ...prev, reference: e.target.value }))}
+                        />
+                      ) : (t.reference || '-')}
+                    </td>
+                    <td className="p-4 font-bold text-slate-900">
+                      {editingTransactionId === t.id ? (
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          className="w-full min-w-28 p-1.5 border border-slate-200 rounded-lg outline-none"
+                          value={editingTransactionForm.amount}
+                          onChange={e => setEditingTransactionForm(prev => ({ ...prev, amount: e.target.value }))}
+                        />
+                      ) : fmtCurrency(t.amount)}
+                    </td>
+                    <td className="p-4 text-slate-500 max-w-md align-top">
+                      {editingTransactionId === t.id ? (
+                        <textarea
+                          className="w-full min-w-52 p-1.5 border border-slate-200 rounded-lg outline-none min-h-20 resize-y"
+                          value={editingTransactionForm.notes}
+                          onChange={e => setEditingTransactionForm(prev => ({ ...prev, notes: e.target.value }))}
+                        />
+                      ) : renderTransactionNotes(t.notes)}
+                    </td>
+                    {isAdmin && (
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-1">
+                          {editingTransactionId === t.id ? (
+                            <>
+                              <button
+                                onClick={handleSaveEditTransaction}
+                                className="px-2.5 py-1 text-xs rounded-md bg-slate-900 text-white hover:bg-slate-800"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={handleCancelEditTransaction}
+                                className="px-2.5 py-1 text-xs rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleStartEditTransaction(t)}
+                                className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded"
+                                title="Edit transaction"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                onClick={() => setTransactionDeleteConfirm({ id: t.id, label: t.reference || t.supplierName })}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="Delete transaction"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {filteredTransactions.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-400">No transactions found.</td>
+                    <td colSpan={isAdmin ? 6 : 5} className="p-8 text-center text-slate-400">No transactions found.</td>
                   </tr>
                 )}
               </tbody>
@@ -746,6 +960,15 @@ const Suppliers: React.FC = () => {
           message={`Are you sure you want to delete "${deleteConfirm.name}"? This action cannot be undone.`}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
+
+      {transactionDeleteConfirm && (
+        <ConfirmDialog
+          title="Delete Transaction"
+          message={`Are you sure you want to delete this transaction (${transactionDeleteConfirm.label})? This action cannot be undone.`}
+          onConfirm={handleDeleteTransaction}
+          onCancel={() => setTransactionDeleteConfirm(null)}
         />
       )}
     </div>

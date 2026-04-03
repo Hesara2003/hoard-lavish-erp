@@ -70,6 +70,8 @@ interface StoreContextType {
   updateSupplier: (id: string, updates: Partial<Supplier>) => void;
   deleteSupplier: (id: string) => void;
   addSupplierTransaction: (transaction: SupplierTransaction) => void;
+  updateSupplierTransaction: (id: string, updates: Partial<SupplierTransaction>) => void;
+  deleteSupplierTransaction: (id: string) => void;
 
   addExpense: (expense: Expense) => void;
   deleteExpense: (id: string) => void;
@@ -288,6 +290,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           categoriesData,
           brandsData,
           damagedGoodsData,
+          exchangesData,
         ] = await Promise.all([
           db.fetchBranches(),
           db.fetchProductsWithStock(),
@@ -302,6 +305,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           db.fetchCategories(),
           db.fetchBrands(),
           db.fetchDamagedGoods(),
+          db.fetchExchanges().catch(() => []),
         ]);
 
         // Load stock transfers separately (table may not exist yet)
@@ -321,14 +325,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch (_) { /* ignore parse errors */ }
         }
 
-        // Load exchange history from localStorage (no Supabase table yet)
-        let exchangeData: ExchangeRecord[] = [];
-        try {
-          const savedExchanges = localStorage.getItem('hoard_exchange_history');
-          if (savedExchanges) {
-            exchangeData = JSON.parse(savedExchanges);
-          }
-        } catch (_) { /* ignore parse errors */ }
+        let exchangeData: ExchangeRecord[] = exchangesData;
+        if (exchangeData.length === 0) {
+          try {
+            const savedExchanges = localStorage.getItem('hoard_exchange_history');
+            if (savedExchanges) {
+              exchangeData = JSON.parse(savedExchanges);
+            }
+          } catch (_) { /* ignore parse errors */ }
+        }
 
         setBranches(branchesData);
         setProducts(productsData);
@@ -378,6 +383,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         categoriesData,
         brandsData,
         damagedGoodsData,
+        exchangesData,
       ] = await Promise.all([
         db.fetchProductsWithStock(),
         db.fetchCustomers(),
@@ -389,6 +395,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         db.fetchCategories(),
         db.fetchBrands(),
         db.fetchDamagedGoods(),
+        db.fetchExchanges().catch(() => []),
       ]);
 
       let stockTransfersData: StockTransfer[] = [];
@@ -406,6 +413,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setCategories(categoriesData);
       setBrands(brandsData);
       setDamagedGoods(damagedGoodsData);
+      setExchangeHistory(exchangesData.length > 0 ? exchangesData : exchangeHistory);
       if (stockTransfersData.length > 0) setStockTransfers(stockTransfersData);
       setLastSyncTime(new Date());
       setIsCloudConnected(true);
@@ -450,6 +458,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, onEvent)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'exchanges' }, onEvent)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_items' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_transfers' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, onEvent)
@@ -996,6 +1006,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const exchangeNumber = `EX-${Date.now().toString(36).toUpperCase()}`;
     const today = new Date();
     const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    // Guard: prevent over-return against original sale lines across previous exchanges.
+    if (exchangeData.originalSaleId) {
+      const originalSale = salesHistory.find(s => s.id === exchangeData.originalSaleId);
+      if (!originalSale) {
+        throw new Error('Original sale could not be found for this exchange.');
+      }
+
+      const requestedByLine = new Map<number, number>();
+      exchangeData.returnedItems.forEach(item => {
+        if (typeof item.sourceSaleItemIndex !== 'number') return;
+        requestedByLine.set(item.sourceSaleItemIndex, (requestedByLine.get(item.sourceSaleItemIndex) || 0) + Math.max(0, item.quantity));
+      });
+
+      const previouslyReturnedByLine = new Map<number, number>();
+      exchangeHistory
+        .filter(ex => ex.originalSaleId === exchangeData.originalSaleId)
+        .forEach(ex => {
+          ex.returnedItems.forEach(item => {
+            if (typeof item.sourceSaleItemIndex !== 'number') return;
+            previouslyReturnedByLine.set(item.sourceSaleItemIndex, (previouslyReturnedByLine.get(item.sourceSaleItemIndex) || 0) + Math.max(0, item.quantity));
+          });
+        });
+
+      for (const [lineIndex, requestedQty] of requestedByLine.entries()) {
+        const saleLine = originalSale.items[lineIndex];
+        if (!saleLine) {
+          throw new Error(`Invalid return line reference detected for sale ${originalSale.invoiceNumber}.`);
+        }
+        const alreadyReturned = previouslyReturnedByLine.get(lineIndex) || 0;
+        const available = Math.max(0, saleLine.quantity - alreadyReturned);
+        if (requestedQty > available) {
+          throw new Error(`Return quantity exceeds available quantity for ${saleLine.name}. Available: ${available}, Requested: ${requestedQty}.`);
+        }
+      }
+    }
+
     const exchange: ExchangeRecord = {
       ...exchangeData,
       id: Math.random().toString(36).substr(2, 9),
@@ -1026,7 +1073,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         branchName: currentBranch.name,
         type: 'IN',
         quantity: item.quantity,
-        reason: `Exchange Return (${exchangeNumber})`,
+        reason: `Exchange Return (${exchangeNumber})${item.size || item.color ? ` [${[item.size ? `Size:${item.size}` : '', item.color ? `Color:${item.color}` : ''].filter(Boolean).join(', ')}]` : ''}`,
         date: `${localDate}T00:00:00.000Z`,
       });
     });
@@ -1049,10 +1096,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         branchName: currentBranch.name,
         type: 'OUT',
         quantity: item.quantity,
-        reason: `Exchange Issue (${exchangeNumber})`,
+        reason: `Exchange Issue (${exchangeNumber})${item.size || item.color ? ` [${[item.size ? `Size:${item.size}` : '', item.color ? `Color:${item.color}` : ''].filter(Boolean).join(', ')}]` : ''}`,
         date: `${localDate}T00:00:00.000Z`,
       });
     });
+
+    // Loyalty/Spend adjustments: reverse returned value, add new value.
+    if (exchange.customerId) {
+      const returnedValue = Math.max(0, exchange.returnedTotal);
+      const newValue = Math.max(0, exchange.newTotal);
+      const loyaltyDelta = Math.floor(newValue / 10) - Math.floor(returnedValue / 10);
+      const spentDelta = newValue - returnedValue;
+
+      setCustomers(prev => prev.map(c => {
+        if (c.id !== exchange.customerId) return c;
+        return {
+          ...c,
+          totalSpent: Math.max(0, c.totalSpent + spentDelta),
+          loyaltyPoints: Math.max(0, c.loyaltyPoints + loyaltyDelta),
+        };
+      }));
+    }
 
     setProducts(updatedProducts);
     setStockHistory(prev => [...newStockLogs, ...prev]);
@@ -1071,6 +1135,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       for (const log of newStockLogs) {
         await db.insertStockMovement(log);
       }
+
+      if (exchange.customerId) {
+        const customer = customers.find(c => c.id === exchange.customerId);
+        if (customer) {
+          const returnedValue = Math.max(0, exchange.returnedTotal);
+          const newValue = Math.max(0, exchange.newTotal);
+          const loyaltyDelta = Math.floor(newValue / 10) - Math.floor(returnedValue / 10);
+          const spentDelta = newValue - returnedValue;
+          await db.updateCustomer(customer.id, {
+            totalSpent: Math.max(0, customer.totalSpent + spentDelta),
+            loyaltyPoints: Math.max(0, customer.loyaltyPoints + loyaltyDelta),
+          });
+        }
+      }
+
+      await db.insertExchange(exchange);
     });
 
     return exchange;
@@ -1257,6 +1337,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dbCall(() => db.insertSupplierTransaction(transaction));
   };
 
+  const updateSupplierTransaction = (id: string, updates: Partial<SupplierTransaction>) => {
+    setSupplierTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+
+    // Some local/optimistic records can have temporary non-UUID ids.
+    // Skip remote update for those to avoid PostgreSQL UUID format errors.
+    if (!isUuid(id)) return;
+
+    dbCall(() => db.updateSupplierTransaction(id, updates));
+  };
+
+  const deleteSupplierTransaction = (id: string) => {
+    setSupplierTransactions(prev => prev.filter(t => t.id !== id));
+
+    // Some local/optimistic records can have temporary non-UUID ids.
+    // Skip remote delete for those to avoid PostgreSQL UUID format errors.
+    if (!isUuid(id)) return;
+
+    dbCall(() => db.deleteSupplierTransaction(id));
+  };
+
   // ============================================================
   // EXPENSE ACTIONS
   // ============================================================
@@ -1386,7 +1486,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, clearCart,
       completeSale, updateSale, deleteSale, completeExchange, adjustStock, transferStock,
       addCategory, removeCategory, addBrand, removeBrand,
-      addSupplier, updateSupplier, deleteSupplier, addSupplierTransaction,
+      addSupplier, updateSupplier, deleteSupplier, addSupplierTransaction, updateSupplierTransaction, deleteSupplierTransaction,
       addExpense, deleteExpense,
       addDamagedGood, deleteDamagedGood,
       addUser, updateUser, deleteUser,
