@@ -16,7 +16,8 @@ export const INITIAL_BRANCHES: Branch[] = [
     id: 'b2',
     name: 'Mount-Lavinia',
     address: '456 Soho St, New York, NY',
-    phone: '212-555-0200'
+    phone: '212-555-0200',
+    thermalPrinterName: 'XP - Q80B'
   }
 ];
 

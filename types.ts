@@ -31,6 +31,20 @@ export interface CartItem extends Product {
   discount?: number;
 }
 
+export interface ExchangeLineItem extends CartItem {
+  sourceType?: 'linked-sale' | 'no-sale-return' | 'new-exchange-item';
+  sourceSaleId?: string;
+  sourceInvoiceNumber?: string;
+  sourceSaleItemIndex?: number;
+  sourceLineKey?: string;
+  originalQuantity?: number;
+  manualReturnUnitPrice?: number;
+  unitItemDiscount?: number;
+  unitBillDiscountShare?: number;
+  effectiveUnitPrice?: number;
+  lineEffectiveTotal?: number;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -164,12 +178,15 @@ export interface ExchangeRecord {
   date: string;
   originalSaleId?: string;
   originalInvoiceNumber?: string;
-  returnedItems: CartItem[];
-  newItems: CartItem[];
+  returnedItems: ExchangeLineItem[];
+  newItems: ExchangeLineItem[];
   returnedTotal: number;
   newTotal: number;
   difference: number; // positive = customer pays more, negative = store refunds/credit
   paymentMethod: 'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay' | 'Cash+Card';
+  refundMethod?: 'Cash' | 'Card' | 'PayHere' | 'Online Transfer' | 'MintPay' | 'Cash+Card';
+  settlementType?: 'CUSTOMER_PAYS' | 'STORE_REFUND' | 'EVEN';
+  exchangeBillDiscount?: number;
   customerId?: string;
   customerName?: string;
   branchId: string;

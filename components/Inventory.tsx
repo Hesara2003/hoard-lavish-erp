@@ -241,13 +241,17 @@ const Inventory: React.FC = () => {
   const handleOpenAdjustment = (product: Product) => {
     setAdjustingProduct(product);
     setAdjustmentType('IN');
-    setAdjustmentQty(0);
+    setAdjustmentQty(1);
     setAdjustmentReason('');
     setIsStockModalOpen(true);
   };
 
   const handleSubmitAdjustment = () => {
-    if (adjustingProduct && adjustmentQty > 0) {
+    const isValidQuantity = adjustmentType === 'ADJUSTMENT'
+      ? adjustmentQty >= 0
+      : adjustmentQty > 0;
+
+    if (adjustingProduct && isValidQuantity) {
       adjustStock(adjustingProduct.id, adjustmentQty, adjustmentType, adjustmentReason || 'Manual Adjustment');
       setIsStockModalOpen(false);
       setAdjustingProduct(null);
@@ -1821,7 +1825,14 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   {['IN', 'OUT', 'ADJUSTMENT'].map((type) => (
                     <button
                       key={type}
-                      onClick={() => setAdjustmentType(type as any)}
+                      onClick={() => {
+                        setAdjustmentType(type as any);
+                        if (type === 'ADJUSTMENT') {
+                          setAdjustmentQty(adjustingProduct.branchStock[currentBranch.id] || 0);
+                        } else if (adjustmentQty <= 0) {
+                          setAdjustmentQty(1);
+                        }
+                      }}
                       className={`py-2 text-xs font-bold rounded-lg border ${adjustmentType === type
                         ? 'bg-slate-900 text-white border-slate-900'
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -1834,7 +1845,9 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Quantity</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  {adjustmentType === 'ADJUSTMENT' ? 'Target Count' : 'Quantity'}
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -1842,6 +1855,11 @@ ${isElectron ? '' : '<script>window.onload=function(){window.print();}<\/script>
                   value={adjustmentQty}
                   onChange={e => setAdjustmentQty(Number(e.target.value))}
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {adjustmentType === 'ADJUSTMENT'
+                    ? 'Set the exact stock count for this branch (0 is allowed).'
+                    : 'Enter units to add or remove.'}
+                </p>
               </div>
 
               <div>
