@@ -1,0 +1,1614 @@
+# Central Fetching Decision Document
+
+## Source docs reviewed
+- CRUD_OPTIMISATION_PLAYBOOK.md
+- OPTIMISATION_DEVELOPMENT_GUIDE.md
+- Source callsites in runtime services/context/components/scripts/migrations.
+
+## Coverage metrics
+- Total CRUD IDs reviewed: 212
+- Read operations: 28
+- Mutation operations (Create+Update+Delete+Upsert+RPC): 184
+- Storage/object operations: 0
+
+## Detection rules used
+- Supabase from/rpc chain extraction with caller and query-shape inference windows.
+- SQL statement extraction for scripts and migrations.
+- localStorage operation extraction for offline/object persistence paths.
+- Deterministic normalization and CRUD-ID assignment by target/op/source/line sort order.
+
+## CRUD targets that SHOULD have central CRUD
+| CRUD target | Evidence from guide/playbook | Recommendation | Centralization shape | Representative guide links |
+|---|---|---|---|---|
+| app_settings | usage_count=7, read_count=3, mutation_count=4, module_spread=3, divergent_query_shapes=true, freshness_sensitive=false | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=app_settings, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0001](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0001), [CRUD-0002](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0002), [CRUD-0003](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0003), [CRUD-0004](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0004), [CRUD-0005](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0005), [CRUD-0006](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0006), [CRUD-0007](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0007) |
+| exchanges | usage_count=4, read_count=1, mutation_count=3, module_spread=3, divergent_query_shapes=false, freshness_sensitive=true | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=exchanges, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0060](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0060), [CRUD-0061](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0061), [CRUD-0062](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0062), [CRUD-0063](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0063) |
+| localStorage | usage_count=12, read_count=6, mutation_count=6, module_spread=4, divergent_query_shapes=false, freshness_sensitive=false | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=localStorage, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0087](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0087), [CRUD-0088](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0088), [CRUD-0089](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0089), [CRUD-0090](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0090), [CRUD-0091](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0091), [CRUD-0092](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0092), [CRUD-0093](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0093), [CRUD-0094](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0094), [CRUD-0095](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0095), [CRUD-0096](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0096) |
+| product_branch_stock | usage_count=14, read_count=1, mutation_count=13, module_spread=4, divergent_query_shapes=true, freshness_sensitive=true | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=product_branch_stock, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0099](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0099), [CRUD-0100](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0100), [CRUD-0101](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0101), [CRUD-0102](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0102), [CRUD-0103](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0103), [CRUD-0104](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0104), [CRUD-0105](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0105), [CRUD-0106](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0106), [CRUD-0107](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0107), [CRUD-0108](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0108) |
+| sale_items | usage_count=15, read_count=2, mutation_count=13, module_spread=3, divergent_query_shapes=false, freshness_sensitive=false | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=sale_items, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0133](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0133), [CRUD-0134](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0134), [CRUD-0135](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0135), [CRUD-0136](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0136), [CRUD-0137](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0137), [CRUD-0138](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0138), [CRUD-0139](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0139), [CRUD-0140](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0140), [CRUD-0141](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0141), [CRUD-0142](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0142) |
+| sales | usage_count=11, read_count=1, mutation_count=10, module_spread=4, divergent_query_shapes=false, freshness_sensitive=true | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=sales, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0148](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0148), [CRUD-0149](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0149), [CRUD-0150](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0150), [CRUD-0151](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0151), [CRUD-0152](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0152), [CRUD-0153](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0153), [CRUD-0154](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0154), [CRUD-0155](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0155), [CRUD-0156](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0156), [CRUD-0157](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0157) |
+| stock_movements | usage_count=9, read_count=1, mutation_count=8, module_spread=3, divergent_query_shapes=false, freshness_sensitive=true | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=stock_movements, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0159](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0159), [CRUD-0160](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0160), [CRUD-0161](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0161), [CRUD-0162](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0162), [CRUD-0163](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0163), [CRUD-0164](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0164), [CRUD-0165](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0165), [CRUD-0166](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0166), [CRUD-0167](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0167) |
+| stock_transfers | usage_count=5, read_count=2, mutation_count=3, module_spread=3, divergent_query_shapes=false, freshness_sensitive=true | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=stock_transfers, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0168](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0168), [CRUD-0169](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0169), [CRUD-0170](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0170), [CRUD-0171](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0171), [CRUD-0172](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0172) |
+| supplier_transactions | usage_count=16, read_count=2, mutation_count=14, module_spread=3, divergent_query_shapes=true, freshness_sensitive=true | Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic. | central_query(target=supplier_transactions, dimensions=branch/date/filter, invalidation=linked_mutations) | [CRUD-0173](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0173), [CRUD-0174](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0174), [CRUD-0175](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0175), [CRUD-0176](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0176), [CRUD-0177](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0177), [CRUD-0178](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0178), [CRUD-0179](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0179), [CRUD-0180](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0180), [CRUD-0181](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0181), [CRUD-0182](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0182) |
+
+## CRUD targets that SHOULD NOT have central CRUD
+| CRUD target | Evidence from guide/playbook | Recommendation | Reason to avoid centralization | Representative guide links |
+|---|---|---|---|---|
+| branches | usage_count=11, read_count=1, mutation_count=10, module_spread=4, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0008](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0008), [CRUD-0009](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0009), [CRUD-0010](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0010), [CRUD-0011](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0011), [CRUD-0012](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0012), [CRUD-0013](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0013), [CRUD-0014](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0014), [CRUD-0015](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0015), [CRUD-0016](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0016), [CRUD-0017](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0017) |
+| brands | usage_count=8, read_count=1, mutation_count=7, module_spread=3, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0019](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0019), [CRUD-0020](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0020), [CRUD-0021](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0021), [CRUD-0022](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0022), [CRUD-0023](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0023), [CRUD-0024](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0024), [CRUD-0025](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0025), [CRUD-0026](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0026) |
+| categories | usage_count=8, read_count=1, mutation_count=7, module_spread=4, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0027](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0027), [CRUD-0028](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0028), [CRUD-0029](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0029), [CRUD-0030](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0030), [CRUD-0031](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0031), [CRUD-0032](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0032), [CRUD-0033](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0033), [CRUD-0034](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0034) |
+| customers | usage_count=16, read_count=1, mutation_count=15, module_spread=3, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0035](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0035), [CRUD-0036](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0036), [CRUD-0037](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0037), [CRUD-0038](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0038), [CRUD-0039](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0039), [CRUD-0040](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0040), [CRUD-0041](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0041), [CRUD-0042](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0042), [CRUD-0043](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0043), [CRUD-0044](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0044) |
+| damaged_goods | usage_count=7, read_count=1, mutation_count=6, module_spread=1, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0051](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0051), [CRUD-0052](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0052), [CRUD-0053](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0053), [CRUD-0054](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0054), [CRUD-0055](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0055), [CRUD-0056](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0056), [CRUD-0057](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0057) |
+| exchange_items | usage_count=2, read_count=0, mutation_count=2, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0058](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0058), [CRUD-0059](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0059) |
+| expenses | usage_count=12, read_count=1, mutation_count=11, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0064](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0064), [CRUD-0065](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0065), [CRUD-0066](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0066), [CRUD-0067](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0067), [CRUD-0068](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0068), [CRUD-0069](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0069), [CRUD-0070](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0070), [CRUD-0071](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0071), [CRUD-0072](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0072), [CRUD-0073](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0073) |
+| fn_complete_sale | usage_count=8, read_count=0, mutation_count=8, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0076](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0076), [CRUD-0077](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0077), [CRUD-0078](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0078), [CRUD-0079](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0079), [CRUD-0080](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0080), [CRUD-0081](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0081), [CRUD-0082](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0082), [CRUD-0083](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0083) |
+| fn_void_sale | usage_count=3, read_count=0, mutation_count=3, module_spread=1, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0084](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0084), [CRUD-0085](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0085), [CRUD-0086](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0086) |
+| products | usage_count=20, read_count=1, mutation_count=19, module_spread=5, divergent_query_shapes=true, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0113](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0113), [CRUD-0114](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0114), [CRUD-0115](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0115), [CRUD-0116](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0116), [CRUD-0117](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0117), [CRUD-0118](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0118), [CRUD-0119](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0119), [CRUD-0120](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0120), [CRUD-0121](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0121), [CRUD-0122](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0122) |
+| suppliers | usage_count=11, read_count=1, mutation_count=10, module_spread=1, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0189](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0189), [CRUD-0190](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0190), [CRUD-0191](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0191), [CRUD-0192](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0192), [CRUD-0193](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0193), [CRUD-0194](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0194), [CRUD-0195](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0195), [CRUD-0196](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0196), [CRUD-0197](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0197), [CRUD-0198](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0198) |
+| users | usage_count=10, read_count=1, mutation_count=9, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0200](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0200), [CRUD-0201](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0201), [CRUD-0202](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0202), [CRUD-0203](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0203), [CRUD-0204](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0204), [CRUD-0205](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0205), [CRUD-0206](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0206), [CRUD-0207](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0207), [CRUD-0208](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0208), [CRUD-0209](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0209) |
+| v_products_with_stock | usage_count=3, read_count=0, mutation_count=3, module_spread=0, divergent_query_shapes=false, freshness_sensitive=false | Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized. | module-local fetch/mutation retained with documented contract and targeted invalidation only | [CRUD-0210](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0210), [CRUD-0211](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0211), [CRUD-0212](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0212) |
+
+## Default rule for single-place reads and non-frontend reads
+- Single-place reads: keep module-local until a second independent consumer appears with same query shape.
+- Non-frontend reads (scripts/migrations/recovery): keep isolated and explicitly versioned; do not route through UI caching layers.
+
+## Practical implementation notes
+- Use a target-first directory layout for centralized fetchers where centralization is recommended.
+- Expose typed query-shape options to preserve existing filter/order semantics and avoid hidden defaults.
+- Keep compatibility shims for legacy RPC signatures and migration drift checks in service boundaries.
+- Keep offline queue replay orchestration in context layer while delegating pure fetch shape to centralized adapters.
+
+## Cache key strategy principles
+- Cache key = target + branch + date_range + filter_set + projection_hash.
+- Mutation key must carry idempotency dimension (business reference or deterministic synthetic key).
+- Storage/offline key names remain immutable and versioned with explicit migration path.
+
+## Invalidation boundaries
+- Invalidate only linked dependency CRUD IDs derived from playbook dependency map.
+- Avoid global invalidation except for schema migration or recovery operations that modify broad entity sets.
+- For RPC operations, invalidate parent and side-effect entities (sale, stock, customer, movement) in ordered sequence.
+
+## Rollout safety notes
+- Roll out by target family (catalog, transactions, suppliers, accounting, settings) with feature toggles when needed.
+- Validate parity of response contracts and UI rendering in each family before switching default fetch path.
+- Preserve offline queue semantics and retry idempotency for write flows during migration.
+- Keep scripted recovery operations out of centralized runtime fetch orchestration.
+
+## Decision evidence appendix
+- Target app_settings: usage_count=7, read_count=3, mutation_count=4, module_spread=3, divergent_query_shapes=true, freshness_sensitive=false
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=app_settings, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0001](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0001), [CRUD-0002](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0002), [CRUD-0003](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0003), [CRUD-0004](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0004), [CRUD-0005](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0005), [CRUD-0006](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0006), [CRUD-0007](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0007)
+- Target exchanges: usage_count=4, read_count=1, mutation_count=3, module_spread=3, divergent_query_shapes=false, freshness_sensitive=true
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=exchanges, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0060](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0060), [CRUD-0061](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0061), [CRUD-0062](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0062), [CRUD-0063](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0063)
+- Target localStorage: usage_count=12, read_count=6, mutation_count=6, module_spread=4, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=localStorage, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0087](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0087), [CRUD-0088](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0088), [CRUD-0089](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0089), [CRUD-0090](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0090), [CRUD-0091](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0091), [CRUD-0092](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0092), [CRUD-0093](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0093), [CRUD-0094](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0094), [CRUD-0095](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0095), [CRUD-0096](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0096)
+- Target product_branch_stock: usage_count=14, read_count=1, mutation_count=13, module_spread=4, divergent_query_shapes=true, freshness_sensitive=true
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=product_branch_stock, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0099](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0099), [CRUD-0100](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0100), [CRUD-0101](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0101), [CRUD-0102](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0102), [CRUD-0103](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0103), [CRUD-0104](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0104), [CRUD-0105](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0105), [CRUD-0106](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0106), [CRUD-0107](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0107), [CRUD-0108](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0108)
+- Target sale_items: usage_count=15, read_count=2, mutation_count=13, module_spread=3, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=sale_items, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0133](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0133), [CRUD-0134](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0134), [CRUD-0135](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0135), [CRUD-0136](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0136), [CRUD-0137](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0137), [CRUD-0138](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0138), [CRUD-0139](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0139), [CRUD-0140](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0140), [CRUD-0141](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0141), [CRUD-0142](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0142)
+- Target sales: usage_count=11, read_count=1, mutation_count=10, module_spread=4, divergent_query_shapes=false, freshness_sensitive=true
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=sales, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0148](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0148), [CRUD-0149](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0149), [CRUD-0150](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0150), [CRUD-0151](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0151), [CRUD-0152](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0152), [CRUD-0153](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0153), [CRUD-0154](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0154), [CRUD-0155](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0155), [CRUD-0156](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0156), [CRUD-0157](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0157)
+- Target stock_movements: usage_count=9, read_count=1, mutation_count=8, module_spread=3, divergent_query_shapes=false, freshness_sensitive=true
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=stock_movements, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0159](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0159), [CRUD-0160](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0160), [CRUD-0161](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0161), [CRUD-0162](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0162), [CRUD-0163](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0163), [CRUD-0164](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0164), [CRUD-0165](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0165), [CRUD-0166](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0166), [CRUD-0167](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0167)
+- Target stock_transfers: usage_count=5, read_count=2, mutation_count=3, module_spread=3, divergent_query_shapes=false, freshness_sensitive=true
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=stock_transfers, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0168](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0168), [CRUD-0169](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0169), [CRUD-0170](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0170), [CRUD-0171](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0171), [CRUD-0172](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0172)
+- Target supplier_transactions: usage_count=16, read_count=2, mutation_count=14, module_spread=3, divergent_query_shapes=true, freshness_sensitive=true
+  - Recommendation: Centralize with target-scoped query factories and shared cache keys to prevent duplicated fetch logic.
+  - Shape/Reason: central_query(target=supplier_transactions, dimensions=branch/date/filter, invalidation=linked_mutations)
+  - Guide links: [CRUD-0173](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0173), [CRUD-0174](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0174), [CRUD-0175](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0175), [CRUD-0176](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0176), [CRUD-0177](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0177), [CRUD-0178](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0178), [CRUD-0179](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0179), [CRUD-0180](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0180), [CRUD-0181](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0181), [CRUD-0182](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0182)
+- Target branches: usage_count=11, read_count=1, mutation_count=10, module_spread=4, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0008](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0008), [CRUD-0009](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0009), [CRUD-0010](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0010), [CRUD-0011](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0011), [CRUD-0012](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0012), [CRUD-0013](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0013), [CRUD-0014](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0014), [CRUD-0015](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0015), [CRUD-0016](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0016), [CRUD-0017](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0017)
+- Target brands: usage_count=8, read_count=1, mutation_count=7, module_spread=3, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0019](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0019), [CRUD-0020](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0020), [CRUD-0021](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0021), [CRUD-0022](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0022), [CRUD-0023](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0023), [CRUD-0024](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0024), [CRUD-0025](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0025), [CRUD-0026](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0026)
+- Target categories: usage_count=8, read_count=1, mutation_count=7, module_spread=4, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0027](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0027), [CRUD-0028](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0028), [CRUD-0029](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0029), [CRUD-0030](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0030), [CRUD-0031](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0031), [CRUD-0032](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0032), [CRUD-0033](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0033), [CRUD-0034](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0034)
+- Target customers: usage_count=16, read_count=1, mutation_count=15, module_spread=3, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0035](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0035), [CRUD-0036](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0036), [CRUD-0037](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0037), [CRUD-0038](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0038), [CRUD-0039](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0039), [CRUD-0040](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0040), [CRUD-0041](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0041), [CRUD-0042](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0042), [CRUD-0043](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0043), [CRUD-0044](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0044)
+- Target damaged_goods: usage_count=7, read_count=1, mutation_count=6, module_spread=1, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0051](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0051), [CRUD-0052](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0052), [CRUD-0053](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0053), [CRUD-0054](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0054), [CRUD-0055](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0055), [CRUD-0056](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0056), [CRUD-0057](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0057)
+- Target exchange_items: usage_count=2, read_count=0, mutation_count=2, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0058](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0058), [CRUD-0059](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0059)
+- Target expenses: usage_count=12, read_count=1, mutation_count=11, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0064](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0064), [CRUD-0065](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0065), [CRUD-0066](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0066), [CRUD-0067](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0067), [CRUD-0068](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0068), [CRUD-0069](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0069), [CRUD-0070](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0070), [CRUD-0071](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0071), [CRUD-0072](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0072), [CRUD-0073](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0073)
+- Target fn_complete_sale: usage_count=8, read_count=0, mutation_count=8, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0076](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0076), [CRUD-0077](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0077), [CRUD-0078](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0078), [CRUD-0079](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0079), [CRUD-0080](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0080), [CRUD-0081](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0081), [CRUD-0082](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0082), [CRUD-0083](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0083)
+- Target fn_void_sale: usage_count=3, read_count=0, mutation_count=3, module_spread=1, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0084](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0084), [CRUD-0085](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0085), [CRUD-0086](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0086)
+- Target products: usage_count=20, read_count=1, mutation_count=19, module_spread=5, divergent_query_shapes=true, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0113](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0113), [CRUD-0114](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0114), [CRUD-0115](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0115), [CRUD-0116](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0116), [CRUD-0117](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0117), [CRUD-0118](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0118), [CRUD-0119](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0119), [CRUD-0120](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0120), [CRUD-0121](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0121), [CRUD-0122](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0122)
+- Target suppliers: usage_count=11, read_count=1, mutation_count=10, module_spread=1, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0189](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0189), [CRUD-0190](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0190), [CRUD-0191](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0191), [CRUD-0192](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0192), [CRUD-0193](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0193), [CRUD-0194](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0194), [CRUD-0195](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0195), [CRUD-0196](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0196), [CRUD-0197](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0197), [CRUD-0198](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0198)
+- Target users: usage_count=10, read_count=1, mutation_count=9, module_spread=2, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0200](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0200), [CRUD-0201](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0201), [CRUD-0202](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0202), [CRUD-0203](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0203), [CRUD-0204](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0204), [CRUD-0205](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0205), [CRUD-0206](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0206), [CRUD-0207](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0207), [CRUD-0208](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0208), [CRUD-0209](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0209)
+- Target v_products_with_stock: usage_count=3, read_count=0, mutation_count=3, module_spread=0, divergent_query_shapes=false, freshness_sensitive=false
+  - Recommendation: Keep local to module to avoid over-abstraction where usage is narrow or shape is highly specialized.
+  - Shape/Reason: module-local fetch/mutation retained with documented contract and targeted invalidation only
+  - Guide links: [CRUD-0210](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0210), [CRUD-0211](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0211), [CRUD-0212](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0212)
+
+## Target-level evidence registry
+### Target app_settings
+- Total operations: 7
+- Read operations: 3
+- Mutation operations: 4
+- Frontend spread: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
+- Business purpose: Store-level runtime configuration and pricing/tax behavior controls.
+- CRUD operation breakdown:
+- CRUD-0001 | Read | services/supabaseService.ts:915
+  - Playbook link: [CRUD-0001](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0001-read-app-settings)
+  - Guide link: [CRUD-0001](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0001)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[eq('id', existing.id)], order=[none], pagination=[limit(1); limit(1)]
+  - Linked dependencies: CRUD-0004, CRUD-0005, CRUD-0006, CRUD-0007, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0002 | Read | services/supabaseService.ts:928
+  - Playbook link: [CRUD-0002](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0002-read-app-settings)
+  - Guide link: [CRUD-0002](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0002)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[id], filters=[eq('id', existing.id)], order=['name'], pagination=[limit(1)]
+  - Linked dependencies: CRUD-0004, CRUD-0005, CRUD-0006, CRUD-0007, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0003 | Read | services/supabaseService.ts:931
+  - Playbook link: [CRUD-0003](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0003-read-app-settings)
+  - Guide link: [CRUD-0003](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0003)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[id], filters=[eq('id', existing.id)], order=['name'], pagination=[limit(1)]
+  - Linked dependencies: CRUD-0004, CRUD-0005, CRUD-0006, CRUD-0007, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0004 | Create | supabase/migrations/001_initial_schema.sql:39
+  - Playbook link: [CRUD-0004](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0004-create-app-settings)
+  - Guide link: [CRUD-0004](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0004)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
+- CRUD-0005 | Create | supabase/migrations/001_initial_schema.sql:335
+  - Playbook link: [CRUD-0005](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0005-create-app-settings)
+  - Guide link: [CRUD-0005](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0005)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
+- CRUD-0006 | Update | components/Settings.tsx:97
+  - Playbook link: [CRUD-0006](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0006-update-app-settings)
+  - Guide link: [CRUD-0006](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0006)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
+- CRUD-0007 | Update | supabase/migrations/001_initial_schema.sql:289
+  - Playbook link: [CRUD-0007](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0007-update-app-settings)
+  - Guide link: [CRUD-0007](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0007)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
+
+### Target branches
+- Total operations: 11
+- Read operations: 1
+- Mutation operations: 10
+- Frontend spread: components/Branches.tsx, components/Sidebar.tsx, components/Inventory.tsx, components/POS.tsx
+- Business purpose: Operational branch metadata and branch-scoped workflow routing.
+- CRUD operation breakdown:
+- CRUD-0008 | Read | services/supabaseService.ts:39
+  - Playbook link: [CRUD-0008](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0008-read-branches)
+  - Guide link: [CRUD-0008](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0008)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073
+- CRUD-0009 | Create | components/Branches.tsx:16
+  - Playbook link: [CRUD-0009](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0009-create-branches)
+  - Guide link: [CRUD-0009](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0009)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0010 | Create | services/supabaseService.ts:53
+  - Playbook link: [CRUD-0010](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0010-create-branches)
+  - Guide link: [CRUD-0010](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0010)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0011 | Create | supabase/migrations/001_initial_schema.sql:16
+  - Playbook link: [CRUD-0011](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0011-create-branches)
+  - Guide link: [CRUD-0011](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0011)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0012 | Create | supabase/migrations/001_initial_schema.sql:324
+  - Playbook link: [CRUD-0012](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0012-create-branches)
+  - Guide link: [CRUD-0012](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0012)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0013 | Update | components/Branches.tsx:14
+  - Playbook link: [CRUD-0013](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0013-update-branches)
+  - Guide link: [CRUD-0013](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0013)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0014 | Update | components/Settings.tsx:104
+  - Playbook link: [CRUD-0014](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0014-update-branches)
+  - Guide link: [CRUD-0014](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0014)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0015 | Update | services/supabaseService.ts:73
+  - Playbook link: [CRUD-0015](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0015-update-branches)
+  - Guide link: [CRUD-0015](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0015)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0016 | Update | supabase/migrations/001_initial_schema.sql:287
+  - Playbook link: [CRUD-0016](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0016-update-branches)
+  - Guide link: [CRUD-0016](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0016)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0017 | Update | supabase/migrations/006_branch_printer_names.sql:1
+  - Playbook link: [CRUD-0017](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0017-update-branches)
+  - Guide link: [CRUD-0017](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0017)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+- CRUD-0018 | Update | supabase/migrations/012_mount_lavinia_default_thermal_printer.sql:2
+  - Playbook link: [CRUD-0018](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0018-update-branches)
+  - Guide link: [CRUD-0018](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0018)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105
+
+### Target brands
+- Total operations: 8
+- Read operations: 1
+- Mutation operations: 7
+- Frontend spread: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
+- Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
+- CRUD operation breakdown:
+- CRUD-0019 | Read | services/supabaseService.ts:958
+  - Playbook link: [CRUD-0019](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0019-read-brands)
+  - Guide link: [CRUD-0019](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0019)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[name], filters=[eq('name', name)], order=['name'], pagination=[none]
+  - Linked dependencies: CRUD-0020, CRUD-0021, CRUD-0022, CRUD-0023, CRUD-0024, CRUD-0025, CRUD-0026, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125
+- CRUD-0020 | Create | components/Inventory.tsx:1240
+  - Playbook link: [CRUD-0020](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0020-create-brands)
+  - Guide link: [CRUD-0020](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0020)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0021 | Create | services/supabaseService.ts:964
+  - Playbook link: [CRUD-0021](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0021-create-brands)
+  - Guide link: [CRUD-0021](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0021)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('name', name)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0022 | Create | supabase/migrations/001_initial_schema.sql:55
+  - Playbook link: [CRUD-0022](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0022-create-brands)
+  - Guide link: [CRUD-0022](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0022)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0023 | Create | supabase/migrations/001_initial_schema.sql:343
+  - Playbook link: [CRUD-0023](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0023-create-brands)
+  - Guide link: [CRUD-0023](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0023)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0024 | Update | supabase/migrations/001_initial_schema.sql:291
+  - Playbook link: [CRUD-0024](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0024-update-brands)
+  - Guide link: [CRUD-0024](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0024)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0025 | Delete | components/Inventory.tsx:1249
+  - Playbook link: [CRUD-0025](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0025-delete-brands)
+  - Guide link: [CRUD-0025](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0025)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0026 | Delete | services/supabaseService.ts:969
+  - Playbook link: [CRUD-0026](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0026-delete-brands)
+  - Guide link: [CRUD-0026](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0026)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('name', name)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+
+### Target categories
+- Total operations: 8
+- Read operations: 1
+- Mutation operations: 7
+- Frontend spread: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
+- Business purpose: Product taxonomy grouping for POS and reporting segmentation.
+- CRUD operation breakdown:
+- CRUD-0027 | Read | services/supabaseService.ts:939
+  - Playbook link: [CRUD-0027](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0027-read-categories)
+  - Guide link: [CRUD-0027](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0027)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[name], filters=[eq('name', name)], order=['name'], pagination=[none]
+  - Linked dependencies: CRUD-0028, CRUD-0029, CRUD-0030, CRUD-0031, CRUD-0032, CRUD-0033, CRUD-0034, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125
+- CRUD-0028 | Create | components/Inventory.tsx:1219
+  - Playbook link: [CRUD-0028](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0028-create-categories)
+  - Guide link: [CRUD-0028](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0028)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0029 | Create | services/supabaseService.ts:945
+  - Playbook link: [CRUD-0029](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0029-create-categories)
+  - Guide link: [CRUD-0029](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0029)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[name], filters=[eq('name', name)], order=['name'], pagination=[none]
+  - Linked dependencies: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0030 | Create | supabase/migrations/001_initial_schema.sql:51
+  - Playbook link: [CRUD-0030](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0030-create-categories)
+  - Guide link: [CRUD-0030](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0030)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0031 | Create | supabase/migrations/001_initial_schema.sql:339
+  - Playbook link: [CRUD-0031](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0031-create-categories)
+  - Guide link: [CRUD-0031](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0031)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0032 | Update | supabase/migrations/001_initial_schema.sql:290
+  - Playbook link: [CRUD-0032](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0032-update-categories)
+  - Guide link: [CRUD-0032](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0032)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0033 | Delete | components/Inventory.tsx:1228
+  - Playbook link: [CRUD-0033](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0033-delete-categories)
+  - Guide link: [CRUD-0033](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0033)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0034 | Delete | services/supabaseService.ts:950
+  - Playbook link: [CRUD-0034](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0034-delete-categories)
+  - Guide link: [CRUD-0034](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0034)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[name], filters=[eq('name', name)], order=['name'], pagination=[none]
+  - Linked dependencies: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+
+### Target customers
+- Total operations: 16
+- Read operations: 1
+- Mutation operations: 15
+- Frontend spread: components/Customers.tsx, components/POS.tsx, components/Dashboard.tsx
+- Business purpose: Customer identity, loyalty, and spend tracking for transactional workflows.
+- CRUD operation breakdown:
+- CRUD-0035 | Read | services/supabaseService.ts:267
+  - Playbook link: [CRUD-0035](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0035-read-customers)
+  - Guide link: [CRUD-0035](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0035)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076
+- CRUD-0036 | Create | components/Customers.tsx:71
+  - Playbook link: [CRUD-0036](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0036-create-customers)
+  - Guide link: [CRUD-0036](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0036)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0037 | Create | components/POS.tsx:664
+  - Playbook link: [CRUD-0037](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0037-create-customers)
+  - Guide link: [CRUD-0037](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0037)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0038 | Create | services/supabaseService.ts:273
+  - Playbook link: [CRUD-0038](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0038-create-customers)
+  - Guide link: [CRUD-0038](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0038)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0039 | Create | supabase/migrations/001_initial_schema.sql:91
+  - Playbook link: [CRUD-0039](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0039-create-customers)
+  - Guide link: [CRUD-0039](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0039)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0040 | Create | supabase/migrations/001_initial_schema.sql:371
+  - Playbook link: [CRUD-0040](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0040-create-customers)
+  - Guide link: [CRUD-0040](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0040)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0041 | Update | components/Customers.tsx:69
+  - Playbook link: [CRUD-0041](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0041-update-customers)
+  - Guide link: [CRUD-0041](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0041)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0042 | Update | services/supabaseService.ts:300
+  - Playbook link: [CRUD-0042](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0042-update-customers)
+  - Guide link: [CRUD-0042](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0042)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id); eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0043 | Update | supabase/migrations/001_initial_schema.sql:273
+  - Playbook link: [CRUD-0043](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0043-update-customers)
+  - Guide link: [CRUD-0043](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0043)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0044 | Update | supabase/migrations/001_initial_schema.sql:294
+  - Playbook link: [CRUD-0044](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0044-update-customers)
+  - Guide link: [CRUD-0044](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0044)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0045 | Update | supabase/migrations/004_add_barcode_fields.sql:118
+  - Playbook link: [CRUD-0045](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0045-update-customers)
+  - Guide link: [CRUD-0045](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0045)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0046 | Update | supabase/migrations/008_cash_card_split_payments.sql:132
+  - Playbook link: [CRUD-0046](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0046-update-customers)
+  - Guide link: [CRUD-0046](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0046)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0047 | Update | supabase/migrations/009_void_sale.sql:56
+  - Playbook link: [CRUD-0047](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0047-update-customers)
+  - Guide link: [CRUD-0047](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0047)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0048 | Update | supabase/migrations/011_sale_item_variant_snapshots.sql:149
+  - Playbook link: [CRUD-0048](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0048-update-customers)
+  - Guide link: [CRUD-0048](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0048)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0049 | Delete | components/Customers.tsx:89
+  - Playbook link: [CRUD-0049](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0049-delete-customers)
+  - Guide link: [CRUD-0049](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0049)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+- CRUD-0050 | Delete | services/supabaseService.ts:305
+  - Playbook link: [CRUD-0050](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0050-delete-customers)
+  - Guide link: [CRUD-0050](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0050)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0148, CRUD-0149, CRUD-0150, CRUD-0151
+
+### Target damaged_goods
+- Total operations: 7
+- Read operations: 1
+- Mutation operations: 6
+- Frontend spread: components/Suppliers.tsx
+- Business purpose: Loss-event logging and supplier-linked inventory quality incidents.
+- CRUD operation breakdown:
+- CRUD-0051 | Read | services/supabaseService.ts:991
+  - Playbook link: [CRUD-0051](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0051-read-damaged-goods)
+  - Guide link: [CRUD-0051](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0051)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0052 | Create | components/Suppliers.tsx:334
+  - Playbook link: [CRUD-0052](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0052-create-damaged-goods)
+  - Guide link: [CRUD-0052](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0052)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0053 | Create | services/supabaseService.ts:1011
+  - Playbook link: [CRUD-0053](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0053-create-damaged-goods)
+  - Guide link: [CRUD-0053](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0053)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0054 | Create | supabase/migrations/002_inventory_and_damaged_goods.sql:30
+  - Playbook link: [CRUD-0054](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0054-create-damaged-goods)
+  - Guide link: [CRUD-0054](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0054)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0055 | Update | supabase/migrations/002_inventory_and_damaged_goods.sql:47
+  - Playbook link: [CRUD-0055](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0055-update-damaged-goods)
+  - Guide link: [CRUD-0055](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0055)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0056 | Delete | components/Suppliers.tsx:347
+  - Playbook link: [CRUD-0056](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0056-delete-damaged-goods)
+  - Guide link: [CRUD-0056](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0056)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+- CRUD-0057 | Delete | services/supabaseService.ts:1027
+  - Playbook link: [CRUD-0057](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0057-delete-damaged-goods)
+  - Guide link: [CRUD-0057](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0057)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
+
+### Target exchange_items
+- Total operations: 2
+- Read operations: 0
+- Mutation operations: 2
+- Frontend spread: components/POS.tsx, components/SalesHistory.tsx
+- Business purpose: Line-level immutable snapshots for exchange return/new item accounting.
+- CRUD operation breakdown:
+- CRUD-0058 | Create | services/supabaseService.ts:578
+  - Playbook link: [CRUD-0058](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0058-create-exchange-items)
+  - Guide link: [CRUD-0058](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0058)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0059 | Create | supabase/migrations/010_exchange_persistence.sql:22
+  - Playbook link: [CRUD-0059](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0059-create-exchange-items)
+  - Guide link: [CRUD-0059](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0059)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+
+### Target exchanges
+- Total operations: 4
+- Read operations: 1
+- Mutation operations: 3
+- Frontend spread: components/POS.tsx, components/SalesHistory.tsx, components/Dashboard.tsx
+- Business purpose: Exchange-level transactional reconciliation for returns and replacement sales.
+- CRUD operation breakdown:
+- CRUD-0060 | Read | services/supabaseService.ts:516
+  - Playbook link: [CRUD-0060](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0060-read-exchanges)
+  - Guide link: [CRUD-0060](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0060)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*, exchange_items(*)], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0058, CRUD-0059, CRUD-0061, CRUD-0062
+- CRUD-0061 | Create | components/POS.tsx:1251
+  - Playbook link: [CRUD-0061](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0061-create-exchanges)
+  - Guide link: [CRUD-0061](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0061)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0058, CRUD-0059, CRUD-0060, CRUD-0099
+- CRUD-0062 | Create | services/supabaseService.ts:525
+  - Playbook link: [CRUD-0062](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0062-create-exchanges)
+  - Guide link: [CRUD-0062](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0062)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0058, CRUD-0059, CRUD-0060, CRUD-0099
+- CRUD-0063 | Create | supabase/migrations/010_exchange_persistence.sql:1
+  - Playbook link: [CRUD-0063](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0063-create-exchanges)
+  - Guide link: [CRUD-0063](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0063)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0058, CRUD-0059, CRUD-0060, CRUD-0099
+
+### Target expenses
+- Total operations: 12
+- Read operations: 1
+- Mutation operations: 11
+- Frontend spread: components/Accounting.tsx, components/Dashboard.tsx
+- Business purpose: Non-sales operating costs feeding accounting and profitability views.
+- CRUD operation breakdown:
+- CRUD-0064 | Read | services/supabaseService.ts:816
+  - Playbook link: [CRUD-0064](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0064-read-expenses)
+  - Guide link: [CRUD-0064](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0064)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073
+- CRUD-0065 | Create | components/Accounting.tsx:156
+  - Playbook link: [CRUD-0065](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0065-create-expenses)
+  - Guide link: [CRUD-0065](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0065)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0066 | Create | services/supabaseService.ts:825
+  - Playbook link: [CRUD-0066](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0066-create-expenses)
+  - Guide link: [CRUD-0066](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0066)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0067 | Create | supabase/migrations/001_initial_schema.sql:179
+  - Playbook link: [CRUD-0067](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0067-create-expenses)
+  - Guide link: [CRUD-0067](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0067)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0068 | Create | supabase/migrations/001_initial_schema.sql:383
+  - Playbook link: [CRUD-0068](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0068-create-expenses)
+  - Guide link: [CRUD-0068](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0068)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0069 | Update | supabase/migrations/001_initial_schema.sql:300
+  - Playbook link: [CRUD-0069](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0069-update-expenses)
+  - Guide link: [CRUD-0069](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0069)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0070 | Update | supabase/migrations/004_add_barcode_fields.sql:20
+  - Playbook link: [CRUD-0070](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0070-update-expenses)
+  - Guide link: [CRUD-0070](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0070)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0071 | Update | supabase/migrations/004_add_barcode_fields.sql:22
+  - Playbook link: [CRUD-0071](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0071-update-expenses)
+  - Guide link: [CRUD-0071](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0071)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0072 | Update | supabase/migrations/004_add_barcode_fields.sql:24
+  - Playbook link: [CRUD-0072](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0072-update-expenses)
+  - Guide link: [CRUD-0072](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0072)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0073 | Update | supabase/migrations/004_add_barcode_fields.sql:25
+  - Playbook link: [CRUD-0073](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0073-update-expenses)
+  - Guide link: [CRUD-0073](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0073)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0074 | Delete | components/Accounting.tsx:536
+  - Playbook link: [CRUD-0074](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0074-delete-expenses)
+  - Guide link: [CRUD-0074](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0074)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+- CRUD-0075 | Delete | services/supabaseService.ts:849
+  - Playbook link: [CRUD-0075](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0075-delete-expenses)
+  - Guide link: [CRUD-0075](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0075)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[*], filters=[eq('id', id)], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0064, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180
+
+### Target fn_complete_sale
+- Total operations: 8
+- Read operations: 0
+- Mutation operations: 8
+- Frontend spread: components/POS.tsx, components/Dashboard.tsx
+- Business purpose: Atomic checkout orchestration with stock and loyalty side-effects.
+- CRUD operation breakdown:
+- CRUD-0076 | RPC | components/Dashboard.tsx:663
+  - Playbook link: [CRUD-0076](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0076-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0076](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0076)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0077 | RPC | components/POS.tsx:624
+  - Playbook link: [CRUD-0077](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0077-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0077](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0077)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0078 | RPC | services/supabaseService.ts:343
+  - Playbook link: [CRUD-0078](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0078-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0078](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0078)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0079 | RPC | services/supabaseService.ts:362
+  - Playbook link: [CRUD-0079](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0079-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0079](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0079)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0080 | RPC | supabase/migrations/001_initial_schema.sql:209
+  - Playbook link: [CRUD-0080](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0080-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0080](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0080)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0081 | RPC | supabase/migrations/004_add_barcode_fields.sql:53
+  - Playbook link: [CRUD-0081](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0081-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0081](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0081)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0082 | RPC | supabase/migrations/008_cash_card_split_payments.sql:28
+  - Playbook link: [CRUD-0082](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0082-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0082](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0082)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0083 | RPC | supabase/migrations/011_sale_item_variant_snapshots.sql:28
+  - Playbook link: [CRUD-0083](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0083-rpc-fn-complete-sale)
+  - Guide link: [CRUD-0083](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0083)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+
+### Target fn_void_sale
+- Total operations: 3
+- Read operations: 0
+- Mutation operations: 3
+- Frontend spread: components/Dashboard.tsx
+- Business purpose: Atomic sale reversal with stock and customer aggregate rollback.
+- CRUD operation breakdown:
+- CRUD-0084 | RPC | components/Dashboard.tsx:683
+  - Playbook link: [CRUD-0084](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0084-rpc-fn-void-sale)
+  - Guide link: [CRUD-0084](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0084)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0085 | RPC | services/supabaseService.ts:368
+  - Playbook link: [CRUD-0085](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0085-rpc-fn-void-sale)
+  - Guide link: [CRUD-0085](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0085)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+- CRUD-0086 | RPC | supabase/migrations/009_void_sale.sql:1
+  - Playbook link: [CRUD-0086](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0086-rpc-fn-void-sale)
+  - Guide link: [CRUD-0086](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0086)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102
+
+### Target localStorage
+- Total operations: 12
+- Read operations: 6
+- Mutation operations: 6
+- Frontend spread: components/OfflineQueue.tsx, context/StoreContext.tsx, scripts/offline-sales-recovery.js, scripts/supplier-expense-recovery.js
+- Business purpose: Offline durability and queue persistence for disconnected operation.
+- CRUD operation breakdown:
+- CRUD-0087 | Read | context/StoreContext.tsx:512
+  - Playbook link: [CRUD-0087](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0087-read-localstorage)
+  - Guide link: [CRUD-0087](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0087)
+  - Trigger profile: context action or orchestration flow
+  - Query-shape facts: columns=[none], filters=[key=OFFLINE_QUEUE_STORAGE_KEY], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0093, CRUD-0094, CRUD-0095, CRUD-0096, CRUD-0097, CRUD-0098, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0088 | Read | context/StoreContext.tsx:535
+  - Playbook link: [CRUD-0088](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0088-read-localstorage)
+  - Guide link: [CRUD-0088](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0088)
+  - Trigger profile: context action or orchestration flow
+  - Query-shape facts: columns=[none], filters=[key='hoard_data_v2'], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0093, CRUD-0094, CRUD-0095, CRUD-0096, CRUD-0097, CRUD-0098, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0089 | Read | context/StoreContext.tsx:609
+  - Playbook link: [CRUD-0089](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0089-read-localstorage)
+  - Guide link: [CRUD-0089](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0089)
+  - Trigger profile: application load/sync/realtime refresh path
+  - Query-shape facts: columns=[none], filters=[key='hoard_stock_transfers'], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0093, CRUD-0094, CRUD-0095, CRUD-0096, CRUD-0097, CRUD-0098, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0090 | Read | context/StoreContext.tsx:619
+  - Playbook link: [CRUD-0090](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0090-read-localstorage)
+  - Guide link: [CRUD-0090](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0090)
+  - Trigger profile: application load/sync/realtime refresh path
+  - Query-shape facts: columns=[none], filters=[key='hoard_exchange_history'], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0093, CRUD-0094, CRUD-0095, CRUD-0096, CRUD-0097, CRUD-0098, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0091 | Read | scripts/offline-sales-recovery.js:6
+  - Playbook link: [CRUD-0091](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0091-read-localstorage)
+  - Guide link: [CRUD-0091](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0091)
+  - Trigger profile: manual recovery script execution
+  - Query-shape facts: columns=[none], filters=[key=STORAGE_KEY], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0093, CRUD-0094, CRUD-0095, CRUD-0096, CRUD-0097, CRUD-0098, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0092 | Read | scripts/supplier-expense-recovery.js:38
+  - Playbook link: [CRUD-0092](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0092-read-localstorage)
+  - Guide link: [CRUD-0092](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0092)
+  - Trigger profile: manual recovery script execution
+  - Query-shape facts: columns=[none], filters=[key=STORAGE_KEY], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0093, CRUD-0094, CRUD-0095, CRUD-0096, CRUD-0097, CRUD-0098, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0093 | Upsert | components/OfflineQueue.tsx:23
+  - Playbook link: [CRUD-0093](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0093-upsert-localstorage)
+  - Guide link: [CRUD-0093](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0093)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0087, CRUD-0088, CRUD-0089, CRUD-0090, CRUD-0091, CRUD-0092, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0094 | Upsert | components/OfflineQueue.tsx:85
+  - Playbook link: [CRUD-0094](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0094-upsert-localstorage)
+  - Guide link: [CRUD-0094](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0094)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0087, CRUD-0088, CRUD-0089, CRUD-0090, CRUD-0091, CRUD-0092, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0095 | Upsert | context/StoreContext.tsx:525
+  - Playbook link: [CRUD-0095](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0095-upsert-localstorage)
+  - Guide link: [CRUD-0095](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0095)
+  - Trigger profile: context action or orchestration flow
+  - Query-shape facts: columns=[none], filters=[key=OFFLINE_QUEUE_STORAGE_KEY, JSON.stringify(offlineQueue], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0087, CRUD-0088, CRUD-0089, CRUD-0090, CRUD-0091, CRUD-0092, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0096 | Upsert | context/StoreContext.tsx:807
+  - Playbook link: [CRUD-0096](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0096-upsert-localstorage)
+  - Guide link: [CRUD-0096](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0096)
+  - Trigger profile: context action or orchestration flow
+  - Query-shape facts: columns=[none], filters=[key='hoard_stock_transfers', JSON.stringify(stockTransfers], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0087, CRUD-0088, CRUD-0089, CRUD-0090, CRUD-0091, CRUD-0092, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0097 | Upsert | context/StoreContext.tsx:808
+  - Playbook link: [CRUD-0097](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0097-upsert-localstorage)
+  - Guide link: [CRUD-0097](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0097)
+  - Trigger profile: context action or orchestration flow
+  - Query-shape facts: columns=[none], filters=[key='hoard_exchange_history', JSON.stringify(exchangeHistory], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0087, CRUD-0088, CRUD-0089, CRUD-0090, CRUD-0091, CRUD-0092, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+- CRUD-0098 | Upsert | context/StoreContext.tsx:815
+  - Playbook link: [CRUD-0098](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0098-upsert-localstorage)
+  - Guide link: [CRUD-0098](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0098)
+  - Trigger profile: context action or orchestration flow
+  - Query-shape facts: columns=[none], filters=[key='hoard_data_v2', JSON.stringify(data], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0087, CRUD-0088, CRUD-0089, CRUD-0090, CRUD-0091, CRUD-0092, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126
+
+### Target product_branch_stock
+- Total operations: 14
+- Read operations: 1
+- Mutation operations: 13
+- Frontend spread: components/Inventory.tsx, components/POS.tsx, components/Dashboard.tsx, components/Suppliers.tsx
+- Business purpose: Branch-level on-hand inventory authoritative state.
+- CRUD operation breakdown:
+- CRUD-0099 | Read | services/supabaseService.ts:115
+  - Playbook link: [CRUD-0099](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0099-read-product-branch-stock)
+  - Guide link: [CRUD-0099](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0099)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[id, name, category, brand, price, cost_price, min_stock_level, sku, description, image_url, color, size, barcode, barcode2, created_at], filters=[none], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109, CRUD-0110, CRUD-0111, CRUD-0112, CRUD-0113, CRUD-0114, CRUD-0115
+- CRUD-0100 | Create | services/supabaseService.ts:158
+  - Playbook link: [CRUD-0100](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0100-create-product-branch-stock)
+  - Guide link: [CRUD-0100](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0100)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', data.id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0101 | Create | supabase/migrations/001_initial_schema.sql:81
+  - Playbook link: [CRUD-0101](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0101-create-product-branch-stock)
+  - Guide link: [CRUD-0101](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0101)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0102 | Create | supabase/migrations/001_initial_schema.sql:356
+  - Playbook link: [CRUD-0102](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0102-create-product-branch-stock)
+  - Guide link: [CRUD-0102](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0102)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0103 | Update | supabase/migrations/001_initial_schema.sql:252
+  - Playbook link: [CRUD-0103](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0103-update-product-branch-stock)
+  - Guide link: [CRUD-0103](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0103)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0104 | Update | supabase/migrations/001_initial_schema.sql:293
+  - Playbook link: [CRUD-0104](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0104-update-product-branch-stock)
+  - Guide link: [CRUD-0104](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0104)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0105 | Update | supabase/migrations/004_add_barcode_fields.sql:97
+  - Playbook link: [CRUD-0105](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0105-update-product-branch-stock)
+  - Guide link: [CRUD-0105](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0105)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0106 | Update | supabase/migrations/008_cash_card_split_payments.sql:112
+  - Playbook link: [CRUD-0106](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0106-update-product-branch-stock)
+  - Guide link: [CRUD-0106](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0106)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0107 | Update | supabase/migrations/009_void_sale.sql:26
+  - Playbook link: [CRUD-0107](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0107-update-product-branch-stock)
+  - Guide link: [CRUD-0107](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0107)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0108 | Update | supabase/migrations/011_sale_item_variant_snapshots.sql:129
+  - Playbook link: [CRUD-0108](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0108-update-product-branch-stock)
+  - Guide link: [CRUD-0108](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0108)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0109 | Upsert | components/Inventory.tsx:256
+  - Playbook link: [CRUD-0109](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0109-upsert-product-branch-stock)
+  - Guide link: [CRUD-0109](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0109)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0110 | Upsert | services/supabaseService.ts:196
+  - Playbook link: [CRUD-0110](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0110-upsert-product-branch-stock)
+  - Guide link: [CRUD-0110](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0110)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[sale_id], filters=[eq('product_id', productId)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0111 | Upsert | services/supabaseService.ts:624
+  - Playbook link: [CRUD-0111](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0111-upsert-product-branch-stock)
+  - Guide link: [CRUD-0111](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0111)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+- CRUD-0112 | Upsert | services/supabaseService.ts:983
+  - Playbook link: [CRUD-0112](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0112-upsert-product-branch-stock)
+  - Guide link: [CRUD-0112](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0112)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[*], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0099, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127
+
+### Target products
+- Total operations: 20
+- Read operations: 1
+- Mutation operations: 19
+- Frontend spread: components/Inventory.tsx, components/POS.tsx, components/Dashboard.tsx, components/Settings.tsx, components/SalesHistory.tsx
+- Business purpose: Master catalog used by POS, inventory control, and reporting surfaces.
+- CRUD operation breakdown:
+- CRUD-0113 | Read | services/supabaseService.ts:111
+  - Playbook link: [CRUD-0113](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0113-read-products)
+  - Guide link: [CRUD-0113](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0113)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[id, name, category, brand, price, cost_price, min_stock_level, sku, description, image_url, color, size, barcode, barcode2, created_at], filters=[none], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0114 | Create | components/Inventory.tsx:211
+  - Playbook link: [CRUD-0114](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0114-create-products)
+  - Guide link: [CRUD-0114](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0114)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0115 | Create | components/Inventory.tsx:229
+  - Playbook link: [CRUD-0115](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0115-create-products)
+  - Guide link: [CRUD-0115](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0115)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0116 | Create | components/Settings.tsx:247
+  - Playbook link: [CRUD-0116](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0116-create-products)
+  - Guide link: [CRUD-0116](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0116)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0117 | Create | services/supabaseService.ts:133
+  - Playbook link: [CRUD-0117](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0117-create-products)
+  - Guide link: [CRUD-0117](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0117)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[id], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0118 | Create | services/supabaseService.ts:161
+  - Playbook link: [CRUD-0118](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0118-create-products)
+  - Guide link: [CRUD-0118](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0118)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', data.id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0119 | Create | supabase/migrations/001_initial_schema.sql:64
+  - Playbook link: [CRUD-0119](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0119-create-products)
+  - Guide link: [CRUD-0119](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0119)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0120 | Create | supabase/migrations/001_initial_schema.sql:347
+  - Playbook link: [CRUD-0120](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0120-create-products)
+  - Guide link: [CRUD-0120](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0120)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0121 | Update | components/Inventory.tsx:227
+  - Playbook link: [CRUD-0121](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0121-update-products)
+  - Guide link: [CRUD-0121](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0121)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0122 | Update | services/supabaseService.ts:189
+  - Playbook link: [CRUD-0122](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0122-update-products)
+  - Guide link: [CRUD-0122](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0122)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0123 | Update | supabase/migrations/001_initial_schema.sql:292
+  - Playbook link: [CRUD-0123](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0123-update-products)
+  - Guide link: [CRUD-0123](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0123)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0124 | Update | supabase/migrations/002_inventory_and_damaged_goods.sql:8
+  - Playbook link: [CRUD-0124](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0124-update-products)
+  - Guide link: [CRUD-0124](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0124)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0125 | Update | supabase/migrations/002_inventory_and_damaged_goods.sql:9
+  - Playbook link: [CRUD-0125](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0125-update-products)
+  - Guide link: [CRUD-0125](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0125)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0126 | Update | supabase/migrations/002_remove_image_urls.sql:4
+  - Playbook link: [CRUD-0126](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0126-update-products)
+  - Guide link: [CRUD-0126](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0126)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0127 | Update | supabase/migrations/004_add_barcode_fields.sql:8
+  - Playbook link: [CRUD-0127](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0127-update-products)
+  - Guide link: [CRUD-0127](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0127)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0128 | Update | supabase/migrations/004_add_barcode_fields.sql:9
+  - Playbook link: [CRUD-0128](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0128-update-products)
+  - Guide link: [CRUD-0128](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0128)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0129 | Delete | components/Inventory.tsx:271
+  - Playbook link: [CRUD-0129](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0129-delete-products)
+  - Guide link: [CRUD-0129](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0129)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0130 | Delete | components/Inventory.tsx:280
+  - Playbook link: [CRUD-0130](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0130-delete-products)
+  - Guide link: [CRUD-0130](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0130)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0131 | Delete | components/Inventory.tsx:288
+  - Playbook link: [CRUD-0131](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0131-delete-products)
+  - Guide link: [CRUD-0131](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0131)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+- CRUD-0132 | Delete | services/supabaseService.ts:250
+  - Playbook link: [CRUD-0132](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0132-delete-products)
+  - Guide link: [CRUD-0132](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0132)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[*], filters=[eq('id', id)], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0058, CRUD-0059, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107, CRUD-0108, CRUD-0109
+
+### Target sale_items
+- Total operations: 15
+- Read operations: 2
+- Mutation operations: 13
+- Frontend spread: components/Dashboard.tsx, components/SalesHistory.tsx, components/POS.tsx
+- Business purpose: Line-level immutable sale snapshots supporting audit and history.
+- CRUD operation breakdown:
+- CRUD-0133 | Read | components/Inventory.tsx:264
+  - Playbook link: [CRUD-0133](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0133-read-sale-items)
+  - Guide link: [CRUD-0133](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0133)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0134 | Read | services/supabaseService.ts:209
+  - Playbook link: [CRUD-0134](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0134-read-sale-items)
+  - Guide link: [CRUD-0134](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0134)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[sale_id], filters=[eq('product_id', productId)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0135 | Create | supabase/migrations/001_initial_schema.sql:124
+  - Playbook link: [CRUD-0135](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0135-create-sale-items)
+  - Guide link: [CRUD-0135](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0135)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0136 | Create | supabase/migrations/001_initial_schema.sql:241
+  - Playbook link: [CRUD-0136](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0136-create-sale-items)
+  - Guide link: [CRUD-0136](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0136)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0137 | Create | supabase/migrations/004_add_barcode_fields.sql:85
+  - Playbook link: [CRUD-0137](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0137-create-sale-items)
+  - Guide link: [CRUD-0137](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0137)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0138 | Create | supabase/migrations/008_cash_card_split_payments.sql:102
+  - Playbook link: [CRUD-0138](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0138-create-sale-items)
+  - Guide link: [CRUD-0138](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0138)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0139 | Create | supabase/migrations/011_sale_item_variant_snapshots.sql:101
+  - Playbook link: [CRUD-0139](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0139-create-sale-items)
+  - Guide link: [CRUD-0139](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0139)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0140 | Update | services/supabaseService.ts:230
+  - Playbook link: [CRUD-0140](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0140-update-sale-items)
+  - Guide link: [CRUD-0140](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0140)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('product_id', id); in('id', linkedSaleIds)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0141 | Update | supabase/migrations/001_initial_schema.sql:296
+  - Playbook link: [CRUD-0141](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0141-update-sale-items)
+  - Guide link: [CRUD-0141](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0141)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0142 | Update | supabase/migrations/004_add_barcode_fields.sql:14
+  - Playbook link: [CRUD-0142](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0142-update-sale-items)
+  - Guide link: [CRUD-0142](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0142)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0143 | Update | supabase/migrations/007_allow_unlinked_sale_items.sql:6
+  - Playbook link: [CRUD-0143](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0143-update-sale-items)
+  - Guide link: [CRUD-0143](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0143)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0144 | Update | supabase/migrations/007_allow_unlinked_sale_items.sql:18
+  - Playbook link: [CRUD-0144](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0144-update-sale-items)
+  - Guide link: [CRUD-0144](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0144)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0145 | Update | supabase/migrations/007_allow_unlinked_sale_items.sql:21
+  - Playbook link: [CRUD-0145](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0145-update-sale-items)
+  - Guide link: [CRUD-0145](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0145)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0146 | Update | supabase/migrations/011_sale_item_variant_snapshots.sql:1
+  - Playbook link: [CRUD-0146](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0146-update-sale-items)
+  - Guide link: [CRUD-0146](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0146)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+- CRUD-0147 | Update | supabase/migrations/011_sale_item_variant_snapshots.sql:10
+  - Playbook link: [CRUD-0147](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0147-update-sale-items)
+  - Guide link: [CRUD-0147](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0147)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079, CRUD-0080, CRUD-0081, CRUD-0082, CRUD-0083, CRUD-0084, CRUD-0085, CRUD-0086, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121
+
+### Target sales
+- Total operations: 11
+- Read operations: 1
+- Mutation operations: 10
+- Frontend spread: components/POS.tsx, components/Dashboard.tsx, components/SalesHistory.tsx, components/Accounting.tsx
+- Business purpose: Top-level sale transactions driving revenue, stock movement, and customer aggregates.
+- CRUD operation breakdown:
+- CRUD-0148 | Read | services/supabaseService.ts:417
+  - Playbook link: [CRUD-0148](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0148-read-sales)
+  - Guide link: [CRUD-0148](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0148)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*, sale_items(*, products(id, name, sku, size, color, barcode, barcode2))], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0149 | Create | supabase/migrations/001_initial_schema.sql:104
+  - Playbook link: [CRUD-0149](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0149-create-sales)
+  - Guide link: [CRUD-0149](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0149)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0150 | Create | supabase/migrations/001_initial_schema.sql:229
+  - Playbook link: [CRUD-0150](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0150-create-sales)
+  - Guide link: [CRUD-0150](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0150)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0151 | Create | supabase/migrations/004_add_barcode_fields.sql:73
+  - Playbook link: [CRUD-0151](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0151-create-sales)
+  - Guide link: [CRUD-0151](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0151)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0152 | Create | supabase/migrations/008_cash_card_split_payments.sql:59
+  - Playbook link: [CRUD-0152](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0152-create-sales)
+  - Guide link: [CRUD-0152](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0152)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0153 | Create | supabase/migrations/011_sale_item_variant_snapshots.sql:58
+  - Playbook link: [CRUD-0153](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0153-create-sales)
+  - Guide link: [CRUD-0153](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0153)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0154 | Update | supabase/migrations/001_initial_schema.sql:295
+  - Playbook link: [CRUD-0154](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0154-update-sales)
+  - Guide link: [CRUD-0154](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0154)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0155 | Update | supabase/migrations/008_cash_card_split_payments.sql:9
+  - Playbook link: [CRUD-0155](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0155-update-sales)
+  - Guide link: [CRUD-0155](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0155)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0156 | Update | supabase/migrations/008_cash_card_split_payments.sql:14
+  - Playbook link: [CRUD-0156](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0156-update-sales)
+  - Guide link: [CRUD-0156](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0156)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0157 | Delete | services/supabaseService.ts:243
+  - Playbook link: [CRUD-0157](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0157-delete-sales)
+  - Guide link: [CRUD-0157](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0157)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[in('id', linkedSaleIds); eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+- CRUD-0158 | Delete | supabase/migrations/009_void_sale.sql:61
+  - Playbook link: [CRUD-0158](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0158-delete-sales)
+  - Guide link: [CRUD-0158](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0158)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0035, CRUD-0036, CRUD-0037, CRUD-0038, CRUD-0039, CRUD-0040, CRUD-0041, CRUD-0042, CRUD-0043, CRUD-0044, CRUD-0045, CRUD-0046, CRUD-0047, CRUD-0048, CRUD-0049, CRUD-0050, CRUD-0076, CRUD-0077, CRUD-0078, CRUD-0079
+
+### Target stock_movements
+- Total operations: 9
+- Read operations: 1
+- Mutation operations: 8
+- Frontend spread: components/Inventory.tsx, components/Dashboard.tsx, components/Accounting.tsx
+- Business purpose: Inventory movement ledger for audit and branch stock history.
+- CRUD operation breakdown:
+- CRUD-0159 | Read | services/supabaseService.ts:601
+  - Playbook link: [CRUD-0159](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0159-read-stock-movements)
+  - Guide link: [CRUD-0159](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0159)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0160 | Create | services/supabaseService.ts:610
+  - Playbook link: [CRUD-0160](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0160-create-stock-movements)
+  - Guide link: [CRUD-0160](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0160)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0161 | Create | supabase/migrations/001_initial_schema.sql:137
+  - Playbook link: [CRUD-0161](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0161-create-stock-movements)
+  - Guide link: [CRUD-0161](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0161)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0162 | Create | supabase/migrations/001_initial_schema.sql:258
+  - Playbook link: [CRUD-0162](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0162-create-stock-movements)
+  - Guide link: [CRUD-0162](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0162)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0163 | Create | supabase/migrations/004_add_barcode_fields.sql:103
+  - Playbook link: [CRUD-0163](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0163-create-stock-movements)
+  - Guide link: [CRUD-0163](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0163)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0164 | Create | supabase/migrations/008_cash_card_split_payments.sql:117
+  - Playbook link: [CRUD-0164](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0164-create-stock-movements)
+  - Guide link: [CRUD-0164](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0164)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0165 | Create | supabase/migrations/009_void_sale.sql:30
+  - Playbook link: [CRUD-0165](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0165-create-stock-movements)
+  - Guide link: [CRUD-0165](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0165)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0166 | Create | supabase/migrations/011_sale_item_variant_snapshots.sql:134
+  - Playbook link: [CRUD-0166](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0166-create-stock-movements)
+  - Guide link: [CRUD-0166](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0166)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+- CRUD-0167 | Update | supabase/migrations/001_initial_schema.sql:297
+  - Playbook link: [CRUD-0167](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0167-update-stock-movements)
+  - Guide link: [CRUD-0167](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0167)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0060, CRUD-0061, CRUD-0062, CRUD-0063, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128
+
+### Target stock_transfers
+- Total operations: 5
+- Read operations: 2
+- Mutation operations: 3
+- Frontend spread: components/Inventory.tsx, components/Accounting.tsx, components/Dashboard.tsx
+- Business purpose: Inter-branch logistics records and stock reconciliation history.
+- CRUD operation breakdown:
+- CRUD-0168 | Read | components/Inventory.tsx:1138
+  - Playbook link: [CRUD-0168](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0168-read-stock-transfers)
+  - Guide link: [CRUD-0168](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0168)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107
+- CRUD-0169 | Read | services/supabaseService.ts:1080
+  - Playbook link: [CRUD-0169](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0169-read-stock-transfers)
+  - Guide link: [CRUD-0169](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0169)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107
+- CRUD-0170 | Create | components/Inventory.tsx:323
+  - Playbook link: [CRUD-0170](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0170-create-stock-transfers)
+  - Guide link: [CRUD-0170](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0170)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107
+- CRUD-0171 | Create | services/supabaseService.ts:1054
+  - Playbook link: [CRUD-0171](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0171-create-stock-transfers)
+  - Guide link: [CRUD-0171](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0171)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107
+- CRUD-0172 | Create | supabase/migrations/003_stock_transfers.sql:1
+  - Playbook link: [CRUD-0172](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0172-create-stock-transfers)
+  - Guide link: [CRUD-0172](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0172)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106, CRUD-0107
+
+### Target supplier_transactions
+- Total operations: 16
+- Read operations: 2
+- Mutation operations: 14
+- Frontend spread: components/Suppliers.tsx, components/Accounting.tsx, components/Dashboard.tsx
+- Business purpose: Supplier payable/credit events and optional accounting impacts.
+- CRUD operation breakdown:
+- CRUD-0173 | Read | services/supabaseService.ts:704
+  - Playbook link: [CRUD-0173](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0173-read-supplier-transactions)
+  - Guide link: [CRUD-0173](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0173)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0174 | Read | services/supabaseService.ts:720
+  - Playbook link: [CRUD-0174](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0174-read-supplier-transactions)
+  - Guide link: [CRUD-0174](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0174)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[id, supplier_id, supplier_name, date, amount, type, reference, notes], filters=[none], order=['date', { ascending: false }], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0175 | Create | components/Suppliers.tsx:302
+  - Playbook link: [CRUD-0175](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0175-create-supplier-transactions)
+  - Guide link: [CRUD-0175](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0175)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0176 | Create | scripts/recover-supplier-expense-2026-04-06.sql:118
+  - Playbook link: [CRUD-0176](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0176-create-supplier-transactions)
+  - Guide link: [CRUD-0176](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0176)
+  - Trigger profile: manual script execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0177 | Create | scripts/recover-supplier-expense-2026-04-06.sql:138
+  - Playbook link: [CRUD-0177](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0177-create-supplier-transactions)
+  - Guide link: [CRUD-0177](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0177)
+  - Trigger profile: manual script execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0178 | Create | services/supabaseService.ts:747
+  - Playbook link: [CRUD-0178](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0178-create-supplier-transactions)
+  - Guide link: [CRUD-0178](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0178)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0179 | Create | services/supabaseService.ts:755
+  - Playbook link: [CRUD-0179](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0179-create-supplier-transactions)
+  - Guide link: [CRUD-0179](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0179)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0180 | Create | supabase/migrations/001_initial_schema.sql:165
+  - Playbook link: [CRUD-0180](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0180-create-supplier-transactions)
+  - Guide link: [CRUD-0180](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0180)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0181 | Update | components/Suppliers.tsx:208
+  - Playbook link: [CRUD-0181](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0181-update-supplier-transactions)
+  - Guide link: [CRUD-0181](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0181)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0182 | Update | services/supabaseService.ts:776
+  - Playbook link: [CRUD-0182](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0182-update-supplier-transactions)
+  - Guide link: [CRUD-0182](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0182)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id); eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0183 | Update | services/supabaseService.ts:788
+  - Playbook link: [CRUD-0183](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0183-update-supplier-transactions)
+  - Guide link: [CRUD-0183](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0183)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id); eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0184 | Update | supabase/migrations/001_initial_schema.sql:299
+  - Playbook link: [CRUD-0184](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0184-update-supplier-transactions)
+  - Guide link: [CRUD-0184](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0184)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0185 | Update | supabase/migrations/013_add_affects_accounting_to_supplier_transactions.sql:11
+  - Playbook link: [CRUD-0185](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0185-update-supplier-transactions)
+  - Guide link: [CRUD-0185](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0185)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0186 | Update | supabase/migrations/013_add_affects_accounting_to_supplier_transactions.sql:13
+  - Playbook link: [CRUD-0186](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0186-update-supplier-transactions)
+  - Guide link: [CRUD-0186](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0186)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0187 | Delete | components/Suppliers.tsx:221
+  - Playbook link: [CRUD-0187](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0187-delete-supplier-transactions)
+  - Guide link: [CRUD-0187](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0187)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+- CRUD-0188 | Delete | services/supabaseService.ts:797
+  - Playbook link: [CRUD-0188](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0188-delete-supplier-transactions)
+  - Guide link: [CRUD-0188](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0188)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0064, CRUD-0065, CRUD-0066, CRUD-0067, CRUD-0068, CRUD-0069, CRUD-0070, CRUD-0071, CRUD-0072, CRUD-0073, CRUD-0074, CRUD-0075, CRUD-0099, CRUD-0100, CRUD-0101, CRUD-0102, CRUD-0103, CRUD-0104, CRUD-0105, CRUD-0106
+
+### Target suppliers
+- Total operations: 11
+- Read operations: 1
+- Mutation operations: 10
+- Frontend spread: components/Suppliers.tsx
+- Business purpose: Supplier master records for purchasing and expense workflows.
+- CRUD operation breakdown:
+- CRUD-0189 | Read | services/supabaseService.ts:646
+  - Playbook link: [CRUD-0189](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0189-read-suppliers)
+  - Guide link: [CRUD-0189](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0189)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0190 | Create | components/Suppliers.tsx:165
+  - Playbook link: [CRUD-0190](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0190-create-suppliers)
+  - Guide link: [CRUD-0190](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0190)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0191 | Create | scripts/recover-supplier-expense-2026-04-06.sql:25
+  - Playbook link: [CRUD-0191](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0191-create-suppliers)
+  - Guide link: [CRUD-0191](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0191)
+  - Trigger profile: manual script execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0192 | Create | services/supabaseService.ts:652
+  - Playbook link: [CRUD-0192](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0192-create-suppliers)
+  - Guide link: [CRUD-0192](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0192)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0193 | Create | supabase/migrations/001_initial_schema.sql:152
+  - Playbook link: [CRUD-0193](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0193-create-suppliers)
+  - Guide link: [CRUD-0193](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0193)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0194 | Create | supabase/migrations/001_initial_schema.sql:377
+  - Playbook link: [CRUD-0194](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0194-create-suppliers)
+  - Guide link: [CRUD-0194](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0194)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0195 | Update | components/Suppliers.tsx:163
+  - Playbook link: [CRUD-0195](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0195-update-suppliers)
+  - Guide link: [CRUD-0195](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0195)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0196 | Update | services/supabaseService.ts:679
+  - Playbook link: [CRUD-0196](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0196-update-suppliers)
+  - Guide link: [CRUD-0196](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0196)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id); eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0197 | Update | supabase/migrations/001_initial_schema.sql:298
+  - Playbook link: [CRUD-0197](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0197-update-suppliers)
+  - Guide link: [CRUD-0197](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0197)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0198 | Delete | components/Suppliers.tsx:181
+  - Playbook link: [CRUD-0198](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0198-delete-suppliers)
+  - Guide link: [CRUD-0198](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0198)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+- CRUD-0199 | Delete | services/supabaseService.ts:684
+  - Playbook link: [CRUD-0199](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0199-delete-suppliers)
+  - Guide link: [CRUD-0199](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0199)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0051, CRUD-0052, CRUD-0053, CRUD-0054, CRUD-0055, CRUD-0056, CRUD-0057, CRUD-0173, CRUD-0174, CRUD-0175, CRUD-0176, CRUD-0177, CRUD-0178, CRUD-0179, CRUD-0180, CRUD-0181, CRUD-0182, CRUD-0183, CRUD-0184, CRUD-0185
+
+### Target users
+- Total operations: 10
+- Read operations: 1
+- Mutation operations: 9
+- Frontend spread: components/Settings.tsx, components/LoginPage.tsx
+- Business purpose: Role and branch assignment records for application access control.
+- CRUD operation breakdown:
+- CRUD-0200 | Read | services/supabaseService.ts:865
+  - Playbook link: [CRUD-0200](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0200-read-users)
+  - Guide link: [CRUD-0200](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0200)
+  - Trigger profile: service read call on load or refresh
+  - Query-shape facts: columns=[*], filters=[none], order=['created_at'], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0201, CRUD-0202, CRUD-0203, CRUD-0204, CRUD-0205, CRUD-0206, CRUD-0207, CRUD-0208, CRUD-0209
+- CRUD-0201 | Create | components/Settings.tsx:119
+  - Playbook link: [CRUD-0201](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0201-create-users)
+  - Guide link: [CRUD-0201](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0201)
+  - Trigger profile: component render-driven or event-driven execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0202 | Create | services/supabaseService.ts:871
+  - Playbook link: [CRUD-0202](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0202-create-users)
+  - Guide link: [CRUD-0202](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0202)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0203 | Create | supabase/migrations/001_initial_schema.sql:27
+  - Playbook link: [CRUD-0203](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0203-create-users)
+  - Guide link: [CRUD-0203](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0203)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0204 | Create | supabase/migrations/001_initial_schema.sql:329
+  - Playbook link: [CRUD-0204](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0204-create-users)
+  - Guide link: [CRUD-0204](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0204)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0205 | Update | components/Settings.tsx:117
+  - Playbook link: [CRUD-0205](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0205-update-users)
+  - Guide link: [CRUD-0205](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0205)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0206 | Update | services/supabaseService.ts:895
+  - Playbook link: [CRUD-0206](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0206-update-users)
+  - Guide link: [CRUD-0206](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0206)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[none], filters=[eq('id', id); eq('id', id)], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0207 | Update | supabase/migrations/001_initial_schema.sql:288
+  - Playbook link: [CRUD-0207](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0207-update-users)
+  - Guide link: [CRUD-0207](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0207)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0208 | Delete | components/Settings.tsx:468
+  - Playbook link: [CRUD-0208](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0208-delete-users)
+  - Guide link: [CRUD-0208](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0208)
+  - Trigger profile: user click or form submit in component handler
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+- CRUD-0209 | Delete | services/supabaseService.ts:900
+  - Playbook link: [CRUD-0209](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0209-delete-users)
+  - Guide link: [CRUD-0209](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0209)
+  - Trigger profile: service function invoked by context action
+  - Query-shape facts: columns=[*], filters=[eq('id', id)], order=[none], pagination=[limit(1)]
+  - Linked dependencies: CRUD-0008, CRUD-0009, CRUD-0010, CRUD-0011, CRUD-0012, CRUD-0013, CRUD-0014, CRUD-0015, CRUD-0016, CRUD-0017, CRUD-0018, CRUD-0200
+
+### Target v_products_with_stock
+- Total operations: 3
+- Read operations: 0
+- Mutation operations: 3
+- Frontend spread: none_direct
+- Business purpose: Entity-specific persistence and retrieval.
+- CRUD operation breakdown:
+- CRUD-0210 | Create | supabase/migrations/001_initial_schema.sql:193
+  - Playbook link: [CRUD-0210](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0210-create-v-products-with-stock)
+  - Guide link: [CRUD-0210](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0210)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: none
+- CRUD-0211 | Create | supabase/migrations/002_inventory_and_damaged_goods.sql:15
+  - Playbook link: [CRUD-0211](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0211-create-v-products-with-stock)
+  - Guide link: [CRUD-0211](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0211)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: none
+- CRUD-0212 | Create | supabase/migrations/004_add_barcode_fields.sql:38
+  - Playbook link: [CRUD-0212](CRUD_OPTIMISATION_PLAYBOOK.md#crud-0212-create-v-products-with-stock)
+  - Guide link: [CRUD-0212](OPTIMISATION_DEVELOPMENT_GUIDE.md#guide-crud-0212)
+  - Trigger profile: migration apply-time execution
+  - Query-shape facts: columns=[none], filters=[none], order=[none], pagination=[none]
+  - Linked dependencies: none
+
