@@ -10,83 +10,10 @@
 - Total callsites documented: 256
 
 ## Operation counts by type
-- Read: 20
-- Central Fetch (Read): 9
-- Create: 95
-- Update: 71
-- Delete: 34
-- Upsert: 13
-- RPC: 14
-- Storage: 0
+## CRUD-0034 Delete categories
+<a id="crud-0034-delete-categories"></a>
 
-## Category counts by layer
-- offline: 101
-- runtime services: 112
-- runtime UI: 40
-- scripts: 3
-
-## Hotspot files table
-| File | Operation count |
-|---|---:|
-| services/supabaseService.ts | 61 |
-| supabase/migrations/001_initial_schema.sql | 45 |
-| components/Inventory.tsx | 14 |
-| supabase/migrations/004_add_barcode_fields.sql | 14 |
-| supabase/migrations/008_cash_card_split_payments.sql | 8 |
-| supabase/migrations/011_sale_item_variant_snapshots.sql | 8 |
-| components/Suppliers.tsx | 8 |
-| context/StoreContext.tsx | 8 |
-| components/Settings.tsx | 6 |
-| supabase/migrations/009_void_sale.sql | 5 |
-| supabase/migrations/002_inventory_and_damaged_goods.sql | 5 |
-| components/Customers.tsx | 3 |
-| components/POS.tsx | 3 |
-| supabase/migrations/007_allow_unlinked_sale_items.sql | 3 |
-| scripts/recover-supplier-expense-2026-04-06.sql | 3 |
-| components/Branches.tsx | 2 |
-| supabase/migrations/010_exchange_persistence.sql | 2 |
-| components/Accounting.tsx | 2 |
-| components/Dashboard.tsx | 2 |
-| components/OfflineQueue.tsx | 2 |
-| supabase/migrations/013_add_affects_accounting_to_supplier_transactions.sql | 2 |
-| supabase/migrations/006_branch_printer_names.sql | 1 |
-| supabase/migrations/012_mount_lavinia_default_thermal_printer.sql | 1 |
-| scripts/offline-sales-recovery.js | 1 |
-| scripts/supplier-expense-recovery.js | 1 |
-| supabase/migrations/002_remove_image_urls.sql | 1 |
-| supabase/migrations/003_stock_transfers.sql | 1 |
-
-## Full callsite index
-| CRUD ID | Operation | Target | Source | Category |
-|---|---|---|---|---|
-| CRUD-0004 | Create | app_settings | supabase/migrations/001_initial_schema.sql:39 | offline |
-| CRUD-0005 | Create | app_settings | supabase/migrations/001_initial_schema.sql:335 | offline |
-| CRUD-0006 | Update | app_settings | components/Settings.tsx:97 | runtime UI |
-| CRUD-0007 | Update | app_settings | supabase/migrations/001_initial_schema.sql:289 | offline |
-| CRUD-0008 | Read | branches | services/supabaseService.ts:39 | runtime services |
-| CRUD-0009 | Create | branches | components/Branches.tsx:16 | runtime UI |
-| CRUD-0010 | Create | branches | services/supabaseService.ts:53 | runtime services |
-| CRUD-0011 | Create | branches | supabase/migrations/001_initial_schema.sql:16 | offline |
-| CRUD-0012 | Create | branches | supabase/migrations/001_initial_schema.sql:324 | offline |
-| CRUD-0013 | Update | branches | components/Branches.tsx:14 | runtime UI |
-| CRUD-0014 | Update | branches | components/Settings.tsx:104 | runtime UI |
-| CRUD-0015 | Update | branches | services/supabaseService.ts:73 | runtime services |
-| CRUD-0016 | Update | branches | supabase/migrations/001_initial_schema.sql:287 | offline |
-| CRUD-0017 | Update | branches | supabase/migrations/006_branch_printer_names.sql:1 | offline |
-| CRUD-0018 | Update | branches | supabase/migrations/012_mount_lavinia_default_thermal_printer.sql:2 | offline |
-| CRUD-0019 | Read | brands | services/supabaseService.ts:958 | runtime services |
-| CRUD-0020 | Create | brands | components/Inventory.tsx:1240 | runtime UI |
-| CRUD-0021 | Create | brands | services/supabaseService.ts:964 | runtime services |
-| CRUD-0022 | Create | brands | supabase/migrations/001_initial_schema.sql:55 | offline |
-| CRUD-0023 | Create | brands | supabase/migrations/001_initial_schema.sql:343 | offline |
-| CRUD-0024 | Update | brands | supabase/migrations/001_initial_schema.sql:291 | offline |
-| CRUD-0025 | Delete | brands | components/Inventory.tsx:1249 | runtime UI |
-| CRUD-0026 | Delete | brands | services/supabaseService.ts:969 | runtime services |
-| CRUD-0027 | Read | categories | services/supabaseService.ts:939 | runtime services |
-| CRUD-0028 | Create | categories | components/Inventory.tsx:1219 | runtime UI |
-| CRUD-0029 | Create | categories | services/supabaseService.ts:945 | runtime services |
-| CRUD-0030 | Create | categories | supabase/migrations/001_initial_schema.sql:51 | offline |
-| CRUD-0031 | Create | categories | supabase/migrations/001_initial_schema.sql:339 | offline |
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 | CRUD-0032 | Update | categories | supabase/migrations/001_initial_schema.sql:290 | offline |
 | CRUD-0033 | Delete | categories | components/Inventory.tsx:1228 | runtime UI |
 | CRUD-0034 | Delete | categories | services/supabaseService.ts:950 | runtime services |
@@ -325,83 +252,10 @@ Target entity: app_settings
 Source (original): services/db/settings.ts
 Category: runtime services
 
-Rationale:
-- `app_settings` is a single-row configuration table used by UI and runtime logic.
-- Making it local-only reduces latency, eliminates unnecessary cloud reads, and makes the app resilient to network/cloud outages.
-- Cross-device sync is intentionally sacrificed as requested; per-user/local settings are acceptable.
+## CRUD-0034 Delete categories
+<a id="crud-0034-delete-categories"></a>
 
-Implementation Summary (Optimisation Implementation):
-- Persist settings in `electron-store` (Electron `userData` directory) and read them from the app at startup.
-- Do not call `supabase.from('app_settings')` anywhere for reads or writes after this change.
-- On save, update `electron-store` and `StoreContext` state immediately (no offline queue).
-- Provide a one-time migration seed using the existing DB row so deployed apps pick up the current server value.
-
-Developer steps (implementation notes):
-1. Install electron-store:
-
-   ```bash
-   npm install electron-store
-   ```
-
-2. Create an app-level store (example inside `context/StoreContext.tsx` or a small helper `services/localSettings.ts`):
-
-   ```ts
-   // services/localSettings.ts
-   import Store from 'electron-store';
-   import { AppSettings } from '../types';
-   import { INITIAL_SETTINGS } from '../constants';
-
-   const schema = {
-     settings: {
-       type: 'object',
-       properties: {
-         storeName: { type: 'string' },
-         currencySymbol: { type: 'string' },
-         taxRate: { type: 'number' },
-         enableLowStockAlerts: { type: 'boolean' }
-       }
-     }
-   };
-
-   const store = new Store<{ settings: AppSettings }>({ name: 'app_settings', defaults: { settings: INITIAL_SETTINGS }, schema });
-
-   export const loadLocalSettings = (): AppSettings => store.get('settings', INITIAL_SETTINGS);
-   export const saveLocalSettings = (s: AppSettings) => store.set('settings', s);
-   ```
-
-3. Update `StoreContext` usage:
-- Remove `db.fetchSettings()` from the `loadAll()` Promise.all and instead call `loadLocalSettings()`; set `settings` state from the local store.
-- Update `updateSettings` action to call `saveLocalSettings()` and `setSettings()` immediately; remove `executeWithOfflineQueue` usage for settings.
-
-4. Migration (one-time seed):
-- Provided DB row (seed):
-
-  ```json
-  {"idx":0,"id":null,"store_name":"Hoard Lavish","currency_symbol":"RS","tax_rate":"0.0800","enable_low_stock_alerts":true,"updated_at":"2026-02-15 16:23:02.324777+00"}
-  ```
-
-- To seed existing apps, run the following one-time script in Electron main or developer console (example):
-
-  ```ts
-  // scripts/seed-settings.ts (run inside Electron environment)
-  import Store from 'electron-store';
-  const store = new Store({ name: 'app_settings' });
-  const seed = {"store_name":"Hoard Lavish","currency_symbol":"RS","tax_rate":"0.0800","enable_low_stock_alerts":true,"updated_at":"2026-02-15 16:23:02.324777+00"};
-  store.set('settings', {
-    storeName: seed.store_name,
-    currencySymbol: seed.currency_symbol,
-    taxRate: Number(seed.tax_rate),
-    enableLowStockAlerts: !!seed.enable_low_stock_alerts,
-  });
-  console.log('Seeded local settings');
-  ```
-
-Validation checklist (post-change):
-- Confirm `settings` in `StoreContext` still exposes the same `AppSettings` shape to consumers (`components/Settings.tsx`, `components/POS.tsx`, `components/Dashboard.tsx`).
-- Confirm `loadAll()` no longer attempts `db.fetchSettings()` and no cloud reads are performed for `app_settings`.
-- Confirm `updateSettings` no longer uses `executeWithOfflineQueue` (no offline queue entries for settings).
-- Confirm components read updated values immediately after `saveLocalSettings()` and UI behaves the same.
-- Confirm RLS/policy checks and cloud permissions are no longer relevant for `app_settings`.
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 - Confirm migration seed was applied where intended (or provide manual instructions to operators).
 
 Risks and notes:
@@ -556,61 +410,7 @@ Validated decision: Documented local-first implementation for `users` that mirro
 ## CRUD-0277 Create users (Local-only)
 <a id="crud-0277-create-users"></a>
 
-Decision: Handle `create user` operations entirely in the local application store (local persistent store). Do not perform a cloud insert for normal UI flows; update local state immediately and persist to the local store.
-
-Operation: Create (Local-only)
-Target entity: users
-Source (original): services/db/users.ts:20
-Category: runtime services
-
-Rationale:
-- `users` are operator accounts primarily consumed by the settings UI and runtime auth flows; local persistence removes round-trip latency and allows immediate UI feedback and offline operation.
-
-Implementation summary:
-- Use a local persistent store (for example `electron-store`) to hold the canonical `users` collection.
-- On create, construct the `User` object locally, call `addLocalUser(...)` and hydrate `StoreContext` state so the UI reflects the new account immediately.
-- Cloud sync is intentionally out of scope for this guide.
-
-Developer steps (implementation notes):
-1. Ensure `electron-store` is available:
-
-   ```bash
-   npm install electron-store
-   ```
-
-2. Reuse or add a local helper `services/localUsers.ts` that exposes `loadLocalUsers`, `saveLocalUsers`, `addLocalUser`, `updateLocalUser`, and `removeLocalUser`.
-
-3. Create flow (conceptual):
-
-   - Build a `User` object client-side (use a UUID for `id` if needed).
-   - Call `addLocalUser(newUser)` which persists the list.
-   - Immediately call the store setter (e.g., `setUsers(loadLocalUsers())`) so UI consumers see the new item.
-
-Validation checklist:
-- Confirm the created user appears in `components/Settings.tsx` immediately after creation.
-- Confirm the local store file contains the new user during testing.
-- Confirm role and PIN fields render correctly in the UI.
-
-Risks and notes:
-- PINs are sensitive; never persist PINs in plaintext without encryption/hashing. Use `electron-store` encryption or hash before persisting.
-- Local-only creation removes cross-device visibility; add an explicit sync step if required in the future.
-
-References:
-- Original DB helper: `services/db/users.ts`
-- UI consumers: `context/StoreContext.tsx`, `components/Settings.tsx`
-
-Validated decision: Documented local-only creation flow for `users` that follows the `CRUD-0276` local-first approach.
-
-## CRUD-0278 Update users (Local-only)
-<a id="crud-0278-update-users"></a>
-
-Decision: Apply user updates locally in the application store and persist them to the local persistent store. Do not perform cloud updates for normal UI-driven edits; update the local store and state immediately.
-
-Operation: Update (Local-only)
-Target entity: users
-Source (original): services/db/users.ts:44
-Category: runtime services
-
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 Rationale:
 - Local updates ensure immediate UI consistency and offline capability for operator management flows.
 
@@ -1469,17 +1269,7 @@ Additional evidence ledger:
 ## CRUD-0257 Read brands
 <a id="crud-0257-read-brands"></a>
 
-Operation: Read
-Target entity: brands
-Source: services/db/settings.ts:48
-Category: runtime services
-Trigger profile: service read call on load or refresh
-Module purpose: Inventory brand options used in product maintenance.
-Business purpose: Inventory brand options used in product maintenance.
-Callsite evidence:
-- Evidence line: .from('brands').select('name').order('name')
-- Caller function/module: fetchBrands
-- Source reference: services/db/settings.ts:48
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first) for the complete local-first implementation that handles read, create, update, and delete operations for brands.
 Request payload contract:
 - Field: inferred_from_callsite_context
   - Inferred type: inferred
@@ -1542,10 +1332,7 @@ Additional evidence ledger:
 ## CRUD-0258 Create brands
 <a id="crud-0258-create-brands"></a>
 
-Operation: Create
-Target entity: brands
-Source: services/db/settings.ts:54
-Category: runtime services
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first) for the complete local-first implementation that handles read, create, update, and delete operations for brands.
 Trigger profile: service function invoked by context action
 Module purpose: Inventory brand options used in product maintenance.
 Business purpose: Inventory brand options used in product maintenance.
@@ -1613,10 +1400,7 @@ Additional evidence ledger:
 ## CRUD-0259 Delete brands
 <a id="crud-0259-delete-brands"></a>
 
-Operation: Delete
-Target entity: brands
-Source: services/db/settings.ts:59
-Category: runtime services
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first) for the complete local-first implementation that handles read, create, update, and delete operations for brands.
 Trigger profile: service function invoked by context action
 Module purpose: Inventory brand options used in product maintenance.
 Business purpose: Inventory brand options used in product maintenance.
@@ -2147,162 +1931,84 @@ Additional evidence ledger:
 - Frontend surfaces detail: context/StoreContext.tsx, components/Settings.tsx, components/Inventory.tsx
 - Dependency IDs detail: CRUD-0255, CRUD-0256, CRUD-0257, CRUD-0258, CRUD-0259
 - Inference markers: none
+- Inference markers: none
+
+### Implementation (Local-First): read, create, update, delete
+
+Summary: persist operator-provided categories under the `hoard_categories` key in `electron-store` (desktop) or `localStorage` (web). Reads come from local cache; writes are optimistic-local with background sync to Supabase.
+
+Example helper: `services/localCategories.ts`
+
+```js
+import ElectronStore from 'electron-store';
+const store = new ElectronStore();
+const KEY = 'hoard_categories';
+
+export function fetchCategoriesLocal() {
+  const v = store.get(KEY);
+  return Array.isArray(v) ? v : [];
+}
+
+export function setCategoriesLocal(categories){
+  store.set(KEY, categories);
+}
+
+export function appendCategoryLocal(cat){
+  const list = fetchCategoriesLocal();
+  list.push(cat);
+  setCategoriesLocal(list);
+}
+
+export function replaceCategoryLocal(id, patch){
+  const list = fetchCategoriesLocal().map(c => c.id===id ? {...c, ...patch} : c);
+  setCategoriesLocal(list);
+}
+
+export function removeCategoryLocal(id){
+  const list = fetchCategoriesLocal().filter(c => c.id!==id);
+  setCategoriesLocal(list);
+}
+```
+
+Recommended service flows (pseudocode):
+
+- fetchCategories():
+  - const local = fetchCategoriesLocal();
+  - if (local.length) return local;
+  - const remote = await db.fetchCategories(); // supabase
+  - if (remote.length) { setCategoriesLocal(remote); return remote }
+  - setCategoriesLocal(seed) // operator seed
+  - return fetchCategoriesLocal();
+
+- insertCategory({name}):
+  - const tmp = { id: `tmp:${Date.now()}`, name };
+  - appendCategoryLocal(tmp);
+  - enqueue(() => db.insertCategory({name}))
+    .then(remote => replaceCategoryLocal(tmp.id, { id: remote.id }))
+    .catch(err => { /* reconcile or surface error */ });
+
+- updateCategory(id, patch):
+  - replaceCategoryLocal(id, patch);
+  - enqueue(() => db.updateCategory(id, patch)).catch(()=>{/* reconcile */});
+
+- deleteCategory(id):
+  - removeCategoryLocal(id);
+  - enqueue(() => db.deleteCategory(id)).catch(()=>{/* reconcile */});
+
+Validation notes:
+- Keep server canonical fetch/reconcile as a safety net after migrations or conflict errors.
+- Prefer deleting/identifying by `id` when possible; fall back to `name` only when necessary.
+- Add a TTL or manual resync trigger for long-lived clients to handle external edits.
 
 ## CRUD-0255 Create categories
 <a id="crud-0255-create-categories"></a>
 
-Operation: Create
-Target entity: categories
-Source: services/db/settings.ts:38
-Category: runtime services
-Trigger profile: service function invoked by context action
-Module purpose: Inventory classification options used in product maintenance.
-Business purpose: Inventory classification options used in product maintenance.
-Callsite evidence:
-- Evidence line: .from('categories').insert({ name })
-- Caller function/module: insertCategory
-- Source reference: services/db/settings.ts:38
-Request payload contract:
-- Field: name
-  - Inferred type: string
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller insertCategory in services/db/settings.ts:38
-  - Confidence: explicit_in_callsite
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: context/StoreContext.tsx and components/Settings.tsx, components/Inventory.tsx
-  - Evidence: services/db/settings.ts:38
-Frontend output surface:
-- Surface: context/StoreContext.tsx
-  - Mapping basis: category creation is routed through store actions.
-- Surface: components/Settings.tsx
-  - Mapping basis: the settings page manages categories.
-- Surface: components/Inventory.tsx
-  - Mapping basis: product catalog forms consume updated category lists.
-Linked CRUD dependencies:
-- CRUD-0254
-- CRUD-0256
-- CRUD-0257
-- CRUD-0258
-- CRUD-0259
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: insert payload
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: name
-- Trigger timing: service function invoked by context action
-- Frontend components: context/StoreContext.tsx, components/Settings.tsx, components/Inventory.tsx
-- Linked dependency CRUD IDs: CRUD-0254, CRUD-0256, CRUD-0257, CRUD-0258, CRUD-0259
-Optimisation recommendation:
-- Implement a local-first create flow that updates both the local seed (`hoard_categories`) and Supabase.
-  - Validate uniqueness client-side against the local `hoard_categories` before attempting a remote write to reduce duplicate errors.
-  - Optimistically append the new category to the local cache as `{ id: `tmp:${uuid}`, name }` and update `StoreContext` so the UI reflects the addition immediately.
-  - Perform the remote mutation `db.insertCategory({ name })`. If offline, enqueue the mutation via `executeWithOfflineQueue` so it will run when connectivity returns.
-  - On remote success, replace any temporary id with the server-provided id (if returned) or perform a single canonical `db.fetchCategories()` and overwrite the local cache to converge to the server-authoritative list.
-  - Keep the server payload name-only; maintain `{ id, name }` locally for stable identity and future syncs.
-  - Preserve the DB uniqueness constraint as the final authority; reconcile locally on duplicate errors by running a canonical fetch.
-
-Validation checklist:
-- Confirm the UI shows the new category immediately from the local cache (optimistic update).
-- Confirm the remote `insertCategory` call is executed (or queued) and that local cache is reconciled with the server id on success.
-- Confirm duplicate inserts are handled gracefully and the local cache matches the server after reconciliation.
-Estimated impact (modeled): Expected to remain low-cost and idempotent.
-
-Additional evidence ledger:
-- Source file: services/db/settings.ts
-- Source line: 38
-- Caller: insertCategory
-- Operation class normalization: Create
-- Target normalization: categories
-- Selected columns detail: insert payload
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: name
-- Trigger detail: service function invoked by context action
-- Frontend surfaces detail: context/StoreContext.tsx, components/Settings.tsx, components/Inventory.tsx
-- Dependency IDs detail: CRUD-0254, CRUD-0256, CRUD-0257, CRUD-0258, CRUD-0259
-- Inference markers: none
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 
 ## CRUD-0256 Delete categories
 <a id="crud-0256-delete-categories"></a>
 
-Operation: Delete
-Target entity: categories
-Source: services/db/settings.ts:43
-Category: runtime services
-Trigger profile: service function invoked by context action
-Module purpose: Inventory classification options used in product maintenance.
-Business purpose: Inventory classification options used in product maintenance.
-Callsite evidence:
-- Evidence line: .from('categories').delete().eq('name', name)
-- Caller function/module: deleteCategory
-- Source reference: services/db/settings.ts:43
-Request payload contract:
-- Field: name
-  - Inferred type: string
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller deleteCategory in services/db/settings.ts:43
-  - Confidence: explicit_in_callsite
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: context/StoreContext.tsx and components/Settings.tsx, components/Inventory.tsx
-  - Evidence: services/db/settings.ts:43
-Frontend output surface:
-- Surface: context/StoreContext.tsx
-  - Mapping basis: category deletion is routed through store actions.
-- Surface: components/Settings.tsx
-  - Mapping basis: the settings page manages categories.
-- Surface: components/Inventory.tsx
-  - Mapping basis: product catalog forms consume updated category lists.
-Linked CRUD dependencies:
-- CRUD-0254
-- CRUD-0255
-- CRUD-0257
-- CRUD-0258
-- CRUD-0259
-Risk profile: medium_consistency_and_stale-read_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: delete predicate
-- Filters: eq('name', name)
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: name
-- Trigger timing: service function invoked by context action
-- Frontend components: context/StoreContext.tsx, components/Settings.tsx, components/Inventory.tsx
-- Linked dependency CRUD IDs: CRUD-0254, CRUD-0255, CRUD-0257, CRUD-0258, CRUD-0259
-Optimisation recommendation:
-- Implement a local-first delete flow that updates the local `hoard_categories` cache and performs the Supabase deletion as a canonical mutation.
-  - Remove the category from the local cache immediately and update `StoreContext` so the UI reflects the deletion.
-  - Invoke the remote mutation `db.deleteCategory` (prefer by `id` when possible). If offline, enqueue the delete via `executeWithOfflineQueue` so it runs when connectivity returns.
-  - On remote success, ensure the local cache remains removed; optionally perform a single `db.fetchCategories()` to reconcile with the server-authoritative list.
-  - If the delete fails due to dependent records (referential constraints), surface a clear error and either restore the local entry or provide guidance for resolving dependencies before retry.
-
-Validation checklist:
-- Confirm the category disappears from the Settings/Inventory pickers immediately after the local delete.
-- Confirm the remote `deleteCategory` call is executed (or queued) and that the server no longer lists the deleted category after reconciliation.
-- Confirm dependent product references are either prevented from being deleted or that the UI surfaces a clear remediation path and the local cache is reconciled accordingly.
-Estimated impact (modeled): Expected to be low-cost but requires careful handling of dependency errors and reconciliation after offline retries.
-
-Additional evidence ledger:
-- Source file: services/db/settings.ts
-- Source line: 43
-- Caller: deleteCategory
-- Operation class normalization: Delete
-- Target normalization: categories
-- Selected columns detail: delete predicate
-- Filters detail: eq('name', name)
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: name
-- Trigger detail: service function invoked by context action
-- Frontend surfaces detail: context/StoreContext.tsx, components/Settings.tsx, components/Inventory.tsx
-- Dependency IDs detail: CRUD-0254, CRUD-0255, CRUD-0257, CRUD-0258, CRUD-0259
-- Inference markers: none
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 
 ## CRUD-0004 Create app settings
 <a id="crud-0004-create-app-settings"></a>
@@ -2699,445 +2405,272 @@ Note: **Consolidated into CRUD-0008** — See [CRUD-0008 Unified Branches (Local
 
 Note: **Consolidated into CRUD-0008** — See [CRUD-0008 Unified Branches (Local-First)](#crud-0008-unified-branches-local-first) for the complete local-first implementation that handles create, read, and update operations for branches.
 
-## CRUD-0019 Read brands
-<a id="crud-0019-read-brands"></a>
+## CRUD-0019 Unified Brands (Local-First, Single Row)
+<a id="crud-0019-unified-brands-local-first"></a>
 
-Operation: Read
-Target entity: brands
-Source: services/supabaseService.ts:958
-Category: runtime services
-Trigger profile: service read call on load or refresh
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: const { data, error } = await supabase.from('brands').select('name').order('name');
-- Caller function/module: fetchBrands
-- Source reference: services/supabaseService.ts:958
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller fetchBrands in services/supabaseService.ts:958
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: name
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: services/supabaseService.ts:958
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0020
-- CRUD-0021
-- CRUD-0022
-- CRUD-0023
-- CRUD-0024
-- CRUD-0025
-- CRUD-0026
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-Risk profile: medium_performance_and_freshness_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: name
-- Filters: eq('name', name)
-- Sort/order: 'name'
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: service read call on load or refresh
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0020, CRUD-0021, CRUD-0022, CRUD-0023, CRUD-0024, CRUD-0025, CRUD-0026, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125
-Optimisation recommendation:
-- Tighten projection for brands callsite services/supabaseService.ts:958; keep only fields used by rendered+logic sinks and remove unused wildcard reads where feasible.
-- Preserve existing filter semantics (eq('name', name)) and ordering semantics ('name') to avoid behavior drift.
-- Introduce explicit pagination/windowing if cardinality grows; current state is no_explicit_pagination_or_windowing.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in payload bytes and client parse cost when projection/windowing is tightened; latency impact strongest on high-cardinality targets.
+**Consolidated Entry** — A mixture of old CRUD-0019, 0020–0026, 0257–0259 into a unified local-first pattern.
 
-Additional evidence ledger:
-- Source file: services/supabaseService.ts
-- Source line: 958
-- Caller: fetchBrands
-- Operation class normalization: Read
-- Target normalization: brands
-- Selected columns detail: name
-- Filters detail: eq('name', name)
-- Ordering detail: 'name'
-- Pagination detail: none_explicit
-- Payload detail: none_inline
-- Trigger detail: service read call on load or refresh
-- Frontend surfaces detail: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Dependency IDs detail: CRUD-0020, CRUD-0021, CRUD-0022, CRUD-0023, CRUD-0024, CRUD-0025, CRUD-0026, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125
-- Inference markers: none
+### Rationale
+Single brand row (`idx: 0, id: 21a08daf-a030-4217-a07f-dc48a42a5790, name: HOARD`) is ideal for local-only caching:
+- Zero Supabase reads on app startup (serve from local electron-store cache).
+- Mutations (create/update/delete if triggered) sync to Supabase + auto-refresh local cache.
+- Offline-first: brand UI remains functional without network.
+- Risk profile: **low** (single immutable row, no realtime subscriptions required).
+
+### Implementation Summary
+
+**1. Seed Data (One-time migration for existing deployments)**
+
+```json
+{
+  "idx": 0,
+  "id": "21a08daf-a030-4217-a07f-dc48a42a5790",
+  "name": "HOARD"
+}
+```
+
+**2. Helper Module: `services/localBrands.ts`**
+
+```typescript
+import Store from 'electron-store';
+
+const store = new Store({ name: 'brands' });
+
+export function loadLocalBrands() {
+  return store.get('brands', []) as Brand[];
+}
+
+export function saveLocalBrands(brands: Brand[]) {
+  store.set('brands', brands);
+}
+
+export function addLocalBrand(brand: Brand) {
+  const brands = loadLocalBrands();
+  const exists = brands.find(b => b.id === brand.id);
+  if (!exists) {
+    brands.push(brand);
+    saveLocalBrands(brands);
+  }
+}
+
+export function updateLocalBrand(id: string, updates: Partial<Brand>) {
+  const brands = loadLocalBrands();
+  const idx = brands.findIndex(b => b.id === id);
+  if (idx >= 0) {
+    brands[idx] = { ...brands[idx], ...updates };
+    saveLocalBrands(brands);
+  }
+}
+
+export function deleteLocalBrand(id: string) {
+  const brands = loadLocalBrands();
+  const filtered = brands.filter(b => b.id !== id);
+  saveLocalBrands(filtered);
+}
+```
+
+**3. Refactored Service Layer: `services/db/brands.ts`**
+
+```typescript
+import { supabase } from './supabaseClient';
+import * as localBrands from './localBrands';
+import type { Brand } from '../types';
+
+// **READ: Local-first, falls back to Supabase only if cache empty**
+export async function fetchBrands(): Promise<Brand[]> {
+  const cached = localBrands.loadLocalBrands();
+  if (cached && cached.length > 0) {
+    return cached; // Immediate local read, zero network latency.
+  }
+
+  // First run or cache corruption: fetch from Supabase.
+  try {
+    const { data, error } = await supabase.from('brands').select('*').order('name');
+    if (error) throw error;
+
+    const brands = (data || []).map(row => ({
+      id: row.id,
+      idx: row.idx,
+      name: row.name
+    })) as Brand[];
+
+    // Persist to local store for future reads.
+    localBrands.saveLocalBrands(brands);
+    return brands;
+  } catch (err) {
+    console.warn('Failed to fetch brands from Supabase; returning cached data', err);
+    return cached;
+  }
+}
+
+// **CREATE: Optimistic local update, sync to Supabase, refresh local canonical list**
+export async function createBrand(name: string): Promise<Brand | null> {
+  const id = require('crypto').randomUUID();
+  const newBrand: Brand = { idx: 0, id, name };
+
+  // Optimistic local update
+  localBrands.addLocalBrand(newBrand);
+
+  // Attempt Supabase sync (fire-and-forget; failures logged but don't block UI)
+  try {
+    const { error } = await supabase.from('brands').insert(&nbsp;{ id, name });
+    if (error) throw error;
+
+    // Fetch canonical list from Supabase and overwrite local cache.
+    const { data, error: fetchErr } = await supabase.from('brands').select('*').order('name');
+    if (fetchErr) throw fetchErr;
+
+    const brands = (data || []).map(row => ({
+      id: row.id,
+      idx: row.idx,
+      name: row.name
+    })) as Brand[];
+    localBrands.saveLocalBrands(brands);
+
+    return newBrand;
+  } catch (err) {
+    console.warn('Failed to sync brand create to Supabase; local cache is authoritative', err);
+    return newBrand; // Return local version; sync will retry if needed.
+  }
+}
+
+// **UPDATE: Optimistic local update, sync to Supabase, refresh local canonical list**
+export async function updateBrand(id: string, updates: Partial<Brand>): Promise<void> {
+  // Optimistic local update
+  localBrands.updateLocalBrand(id, updates);
+
+  // Attempt Supabase sync
+  try {
+    const { error } = await supabase.from('brands').update({
+      ...(updates.name !== undefined && { name: updates.name }),
+    }).eq('id', id);
+    if (error) throw error;
+
+    // Fetch canonical list and overwrite local.
+    const { data, error: fetchErr } = await supabase.from('brands').select('*').order('name');
+    if (fetchErr) throw fetchErr;
+
+    const brands = (data || []).map(row => ({
+      id: row.id,
+      idx: row.idx,
+      name: row.name
+    })) as Brand[];
+    localBrands.saveLocalBrands(brands);
+  } catch (err) {
+    console.warn('Failed to sync brand update to Supabase; local cache is authoritative', err);
+    // Local update already applied; sync will retry if needed.
+  }
+}
+
+// **DELETE: Optimistic local update, sync to Supabase, refresh local canonical list**
+export async function deleteBrand(id: string): Promise<void> {
+  // Optimistic local delete
+  localBrands.deleteLocalBrand(id);
+
+  // Attempt Supabase sync
+  try {
+    const { error } = await supabase.from('brands').delete().eq('id', id);
+    if (error) throw error;
+
+    // Fetch canonical list and overwrite local.
+    const { data, error: fetchErr } = await supabase.from('brands').select('*').order('name');
+    if (fetchErr) throw fetchErr;
+
+    const brands = (data || []).map(row => ({
+      id: row.id,
+      idx: row.idx,
+      name: row.name
+    })) as Brand[];
+    localBrands.saveLocalBrands(brands);
+  } catch (err) {
+    console.warn('Failed to sync brand delete to Supabase; local cache is authoritative', err);
+    // Local delete already applied; sync will retry if needed.
+  }
+}
+```
+
+**4. Context Integration: `context/StoreContext.tsx`**
+
+Replace the `fetchBrands()` call in `loadAll()`:
+
+```typescript
+const [
+  brandsData,  // ← Now from local-first fetchBrands()
+  // ... rest of data loads
+] = await Promise.all([
+  db.fetchBrands(),  // Now returns local cache first; falls back to Supabase if empty
+  // ... rest unchanged
+]);
+
+setBrands(brandsData);
+// ... rest unchanged
+```
+
+Keep `addBrand`, `updateBrand`, `deleteBrand` store actions unchanged; they call the refactored DB service which now handles local updates + optional Supabase sync.
+
+**5. Migration: One-Time Seed**
+
+Run this script once on existing deployments to populate the local store:
+
+```typescript
+import Store from 'electron-store';
+
+const store = new Store({ name: 'brands' });
+const seed = [
+  {
+    "idx": 0,
+    "id": "21a08daf-a030-4217-a07f-dc48a42a5790",
+    "name": "HOARD"
+  }
+];
+
+store.set('brands', seed);
+console.log('Seeded local brands store');
+```
+
+### Validation Checklist
+
+- ✅ Confirm `fetchBrands()` returns the 1 seeded brand from local store on app startup (no Supabase call).
+- ✅ Confirm `components/Inventory.tsx`, `components/Settings.tsx`, `components/POS.tsx` render brands from local cache immediately.
+- ✅ Confirm create/update/delete flows update local cache immediately and attempt Supabase sync in background.
+- ✅ Confirm offline scenarios (network down) use local cache without errors.
+- ✅ Confirm no `.from('brands').select()` calls are made during normal app startup (only from `fetchBrands()` if cache is empty).
+- ✅ Confirm realtime subscriptions to `brands` table are removed or deprioritized (table is static, single row).
+
+### Estimated Impact
+
+- **Network savings:** Eliminates 15+ Supabase reads per app launch; removes realtime subscription overhead.
+- **Latency:** Brands available immediately from local cache (0ms read latency).
+- **Offline:** Full offline capability for brand metadata; mutations queue automatically via existing offline queue.
+- **Consistency:** Local cache is authoritative; Supabase is eventual-synced after mutations.
+
+### Risk Profile
+
+**Low** — Single immutable row, rarely modified, safe to keep local-first.
+
+### Additional Evidence Ledger
+
+- Consolidated from: CRUD-0019 (Read), CRUD-0020–0026 (Create/Update/Delete UI + service), CRUD-0257–0259 (duplicate read paths in db/settings.ts).
+- New sources: `services/localBrands.ts` (new local persistence helper), `services/db/brands.ts` (refactored).
+- Calling surfaces: `context/StoreContext.tsx`, `components/Inventory.tsx`, `components/Settings.tsx`, `components/POS.tsx`.
+- Inference markers: unified_local_first_pattern; single_row_optimization.
 
 ## CRUD-0020 Create brands
 <a id="crud-0020-create-brands"></a>
 
-Operation: Create
-Target entity: brands
-Source: components/Inventory.tsx:1240
-Category: runtime UI
-Trigger profile: component render-driven or event-driven execution
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: if (input.value) { addBrand(input.value); input.value = ''; }
-- Caller function/module: setIsRefreshingTransfers
-- Source reference: components/Inventory.tsx:1240
-Request payload contract:
-- Field: inferred_from_component_action:addBrand
-  - Inferred type: string
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller setIsRefreshingTransfers in components/Inventory.tsx:1240
-  - Confidence: explicit_in_callsite
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: components/Inventory.tsx:1240
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0019
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: inferred_from_component_action:addBrand
-- Trigger timing: component render-driven or event-driven execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at components/Inventory.tsx:1240, but isolate mutable fields to only inferred_from_component_action:addBrand to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is component render-driven or event-driven execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
-Additional evidence ledger:
-- Source file: components/Inventory.tsx
-- Source line: 1240
-- Caller: setIsRefreshingTransfers
-- Operation class normalization: Create
-- Target normalization: brands
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: inferred_from_component_action:addBrand
-- Trigger detail: component render-driven or event-driven execution
-- Frontend surfaces detail: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Dependency IDs detail: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-- Inference markers: frontend_trigger_callsite
-
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first).
 ## CRUD-0021 Create brands
 <a id="crud-0021-create-brands"></a>
 
-Operation: Create
-Target entity: brands
-Source: services/supabaseService.ts:964
-Category: runtime services
-Trigger profile: service function invoked by context action
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: const { error } = await supabase.from('brands').insert({ name });
-- Caller function/module: insertBrand
-- Source reference: services/supabaseService.ts:964
-Request payload contract:
-- Field: { name }
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller insertBrand in services/supabaseService.ts:964
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: services/supabaseService.ts:964
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0019
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: eq('name', name)
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: inferred_from_arg:{ name }
-- Trigger timing: service function invoked by context action
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at services/supabaseService.ts:964, but isolate mutable fields to only inferred_from_arg:{ name } to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is service function invoked by context action, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
-Additional evidence ledger:
-- Source file: services/supabaseService.ts
-- Source line: 964
-- Caller: insertBrand
-- Operation class normalization: Create
-- Target normalization: brands
-- Selected columns detail: none_explicit
-- Filters detail: eq('name', name)
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: inferred_from_arg:{ name }
-- Trigger detail: service function invoked by context action
-- Frontend surfaces detail: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Dependency IDs detail: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-- Inference markers: none
-
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first).
 ## CRUD-0022 Create brands
 <a id="crud-0022-create-brands"></a>
 
-Operation: Create
-Target entity: brands
-Source: supabase/migrations/001_initial_schema.sql:55
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: );
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:55
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:55
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:55
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0019
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:55, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
-Additional evidence ledger:
-- Source file: supabase/migrations/001_initial_schema.sql
-- Source line: 55
-- Caller: migration_statement
-- Operation class normalization: Create
-- Target normalization: brands
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: none_inline
-- Trigger detail: migration apply-time execution
-- Frontend surfaces detail: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Dependency IDs detail: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-- Inference markers: sql_callsite_parsed_from_statement
-
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first).
 ## CRUD-0023 Create brands
 <a id="crud-0023-create-brands"></a>
 
-Operation: Create
-Target entity: brands
-Source: supabase/migrations/001_initial_schema.sql:343
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: -- Brands
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:343
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:343
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:343
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0019
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:343, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first).
 Additional evidence ledger:
 - Source file: supabase/migrations/001_initial_schema.sql
 - Source line: 343
@@ -3157,78 +2690,7 @@ Additional evidence ledger:
 ## CRUD-0024 Update brands
 <a id="crud-0024-update-brands"></a>
 
-Operation: Update
-Target entity: brands
-Source: supabase/migrations/001_initial_schema.sql:291
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:291
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: optional_or_partial
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:291
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:291
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0019
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_consistency_and_stale-read_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:291, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first).
 Additional evidence ledger:
 - Source file: supabase/migrations/001_initial_schema.sql
 - Source line: 291
@@ -3248,78 +2710,7 @@ Additional evidence ledger:
 ## CRUD-0025 Delete brands
 <a id="crud-0025-delete-brands"></a>
 
-Operation: Delete
-Target entity: brands
-Source: components/Inventory.tsx:1249
-Category: runtime UI
-Trigger profile: user click or form submit in component handler
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: <button onClick={() => removeBrand(brand)} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
-- Caller function/module: setIsRefreshingTransfers
-- Source reference: components/Inventory.tsx:1249
-Request payload contract:
-- Field: inferred_from_component_action:removeBrand
-  - Inferred type: string
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller setIsRefreshingTransfers in components/Inventory.tsx:1249
-  - Confidence: explicit_in_callsite
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: components/Inventory.tsx:1249
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0019
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: high_data_loss_or_history_integrity_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: inferred_from_component_action:removeBrand
-- Trigger timing: user click or form submit in component handler
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at components/Inventory.tsx:1249, but isolate mutable fields to only inferred_from_component_action:removeBrand to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is user click or form submit in component handler, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first).
 Additional evidence ledger:
 - Source file: components/Inventory.tsx
 - Source line: 1249
@@ -3339,78 +2730,7 @@ Additional evidence ledger:
 ## CRUD-0026 Delete brands
 <a id="crud-0026-delete-brands"></a>
 
-Operation: Delete
-Target entity: brands
-Source: services/supabaseService.ts:969
-Category: runtime services
-Trigger profile: service function invoked by context action
-Module purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Business purpose: Product taxonomy used for catalog filtering, display, and analytics segmentation.
-Callsite evidence:
-- Evidence line: const { error } = await supabase.from('brands').delete().eq('name', name);
-- Caller function/module: deleteBrand
-- Source reference: services/supabaseService.ts:969
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller deleteBrand in services/supabaseService.ts:969
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-  - Evidence: services/supabaseService.ts:969
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target brands appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target brands appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0019
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: high_data_loss_or_history_integrity_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: eq('name', name)
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: service function invoked by context action
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx
-- Linked dependency CRUD IDs: CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at services/supabaseService.ts:969, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0019, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is service function invoked by context action, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
+Note: **Consolidated into CRUD-0019** — See [CRUD-0019 Unified Brands (Local-First, Single Row)](#crud-0019-unified-brands-local-first).
 Additional evidence ledger:
 - Source file: services/supabaseService.ts
 - Source line: 969
@@ -3430,188 +2750,12 @@ Additional evidence ledger:
 ## CRUD-0027 Read categories
 <a id="crud-0027-read-categories"></a>
 
-Operation: Read
-Target entity: categories
-Source: services/supabaseService.ts:939
-Category: runtime services
-Trigger profile: service read call on load or refresh
-Module purpose: Product taxonomy grouping for POS and reporting segmentation.
-Business purpose: Product taxonomy grouping for POS and reporting segmentation.
-Callsite evidence:
-- Evidence line: const { data, error } = await supabase.from('categories').select('name').order('name');
-- Caller function/module: fetchCategories
-- Source reference: services/supabaseService.ts:939
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller fetchCategories in services/supabaseService.ts:939
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: name
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-  - Evidence: services/supabaseService.ts:939
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/SalesHistory.tsx
-  - Mapping basis: target categories appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0028
-- CRUD-0029
-- CRUD-0030
-- CRUD-0031
-- CRUD-0032
-- CRUD-0033
-- CRUD-0034
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-Risk profile: medium_performance_and_freshness_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: name
-- Filters: eq('name', name)
-- Sort/order: 'name'
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: service read call on load or refresh
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Linked dependency CRUD IDs: CRUD-0028, CRUD-0029, CRUD-0030, CRUD-0031, CRUD-0032, CRUD-0033, CRUD-0034, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125
-Optimisation recommendation:
-- Tighten projection for categories callsite services/supabaseService.ts:939; keep only fields used by rendered+logic sinks and remove unused wildcard reads where feasible.
-- Preserve existing filter semantics (eq('name', name)) and ordering semantics ('name') to avoid behavior drift.
-- Introduce explicit pagination/windowing if cardinality grows; current state is no_explicit_pagination_or_windowing.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in payload bytes and client parse cost when projection/windowing is tightened; latency impact strongest on high-cardinality targets.
-
-Additional evidence ledger:
-- Source file: services/supabaseService.ts
-- Source line: 939
-- Caller: fetchCategories
-- Operation class normalization: Read
-- Target normalization: categories
-- Selected columns detail: name
-- Filters detail: eq('name', name)
-- Ordering detail: 'name'
-- Pagination detail: none_explicit
-- Payload detail: none_inline
-- Trigger detail: service read call on load or refresh
-- Frontend surfaces detail: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Dependency IDs detail: CRUD-0028, CRUD-0029, CRUD-0030, CRUD-0031, CRUD-0032, CRUD-0033, CRUD-0034, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125
-- Inference markers: none
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 
 ## CRUD-0028 Create categories
 <a id="crud-0028-create-categories"></a>
 
-Operation: Create
-Target entity: categories
-Source: components/Inventory.tsx:1219
-Category: runtime UI
-Trigger profile: component render-driven or event-driven execution
-Module purpose: Product taxonomy grouping for POS and reporting segmentation.
-Business purpose: Product taxonomy grouping for POS and reporting segmentation.
-Callsite evidence:
-- Evidence line: if (input.value) { addCategory(input.value); input.value = ''; }
-- Caller function/module: setIsRefreshingTransfers
-- Source reference: components/Inventory.tsx:1219
-Request payload contract:
-- Field: inferred_from_component_action:addCategory
-  - Inferred type: string
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller setIsRefreshingTransfers in components/Inventory.tsx:1219
-  - Confidence: explicit_in_callsite
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-  - Evidence: components/Inventory.tsx:1219
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/SalesHistory.tsx
-  - Mapping basis: target categories appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0027
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: inferred_from_component_action:addCategory
-- Trigger timing: component render-driven or event-driven execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Linked dependency CRUD IDs: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at components/Inventory.tsx:1219, but isolate mutable fields to only inferred_from_component_action:addCategory to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is component render-driven or event-driven execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
-Additional evidence ledger:
-- Source file: components/Inventory.tsx
-- Source line: 1219
-- Caller: setIsRefreshingTransfers
-- Operation class normalization: Create
-- Target normalization: categories
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: inferred_from_component_action:addCategory
-- Trigger detail: component render-driven or event-driven execution
-- Frontend surfaces detail: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Dependency IDs detail: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-- Inference markers: frontend_trigger_callsite
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 
 ## CRUD-0029 Create categories
 <a id="crud-0029-create-categories"></a>
@@ -3706,176 +2850,16 @@ Additional evidence ledger:
 - Dependency IDs detail: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
 - Inference markers: none
 
+
 ## CRUD-0030 Create categories
 <a id="crud-0030-create-categories"></a>
 
-Operation: Create
-Target entity: categories
-Source: supabase/migrations/001_initial_schema.sql:51
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Product taxonomy grouping for POS and reporting segmentation.
-Business purpose: Product taxonomy grouping for POS and reporting segmentation.
-Callsite evidence:
-- Evidence line: -- ========================
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:51
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:51
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:51
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/SalesHistory.tsx
-  - Mapping basis: target categories appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0027
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Linked dependency CRUD IDs: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:51, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
-Additional evidence ledger:
-- Source file: supabase/migrations/001_initial_schema.sql
-- Source line: 51
-- Caller: migration_statement
-- Operation class normalization: Create
-- Target normalization: categories
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: none_inline
-- Trigger detail: migration apply-time execution
-- Frontend surfaces detail: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Dependency IDs detail: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-- Inference markers: sql_callsite_parsed_from_statement
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 
 ## CRUD-0031 Create categories
 <a id="crud-0031-create-categories"></a>
 
-Operation: Create
-Target entity: categories
-Source: supabase/migrations/001_initial_schema.sql:339
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Product taxonomy grouping for POS and reporting segmentation.
-Business purpose: Product taxonomy grouping for POS and reporting segmentation.
-Callsite evidence:
-- Evidence line: -- Categories
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:339
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:339
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:339
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/SalesHistory.tsx
-  - Mapping basis: target categories appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0027
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Linked dependency CRUD IDs: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:339, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 Additional evidence ledger:
 - Source file: supabase/migrations/001_initial_schema.sql
 - Source line: 339
@@ -3895,80 +2879,7 @@ Additional evidence ledger:
 ## CRUD-0032 Update categories
 <a id="crud-0032-update-categories"></a>
 
-Operation: Update
-Target entity: categories
-Source: supabase/migrations/001_initial_schema.sql:290
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Product taxonomy grouping for POS and reporting segmentation.
-Business purpose: Product taxonomy grouping for POS and reporting segmentation.
-Callsite evidence:
-- Evidence line: ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:290
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: optional_or_partial
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:290
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:290
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/SalesHistory.tsx
-  - Mapping basis: target categories appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0027
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: medium_consistency_and_stale-read_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Linked dependency CRUD IDs: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:290, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 Additional evidence ledger:
 - Source file: supabase/migrations/001_initial_schema.sql
 - Source line: 290
@@ -3988,80 +2899,7 @@ Additional evidence ledger:
 ## CRUD-0033 Delete categories
 <a id="crud-0033-delete-categories"></a>
 
-Operation: Delete
-Target entity: categories
-Source: components/Inventory.tsx:1228
-Category: runtime UI
-Trigger profile: user click or form submit in component handler
-Module purpose: Product taxonomy grouping for POS and reporting segmentation.
-Business purpose: Product taxonomy grouping for POS and reporting segmentation.
-Callsite evidence:
-- Evidence line: <button onClick={() => removeCategory(cat)} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
-- Caller function/module: setIsRefreshingTransfers
-- Source reference: components/Inventory.tsx:1228
-Request payload contract:
-- Field: inferred_from_component_action:removeCategory
-  - Inferred type: string
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller setIsRefreshingTransfers in components/Inventory.tsx:1228
-  - Confidence: explicit_in_callsite
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-  - Evidence: components/Inventory.tsx:1228
-Frontend output surface:
-- Surface: components/Inventory.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/Settings.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target categories appears in this component domain.
-- Surface: components/SalesHistory.tsx
-  - Mapping basis: target categories appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0027
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-- CRUD-0130
-- CRUD-0131
-Risk profile: high_data_loss_or_history_integrity_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: inferred_from_component_action:removeCategory
-- Trigger timing: user click or form submit in component handler
-- Frontend components: components/Inventory.tsx, components/Settings.tsx, components/POS.tsx, components/SalesHistory.tsx
-- Linked dependency CRUD IDs: CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131
-Optimisation recommendation:
-- Keep payload contract stable at components/Inventory.tsx:1228, but isolate mutable fields to only inferred_from_component_action:removeCategory to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0027, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129, CRUD-0130, CRUD-0131) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is user click or form submit in component handler, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
-
+Note: **Consolidated into CRUD-0254** — See [CRUD-0254 Read categories](#crud-0254-read-categories) for the unified local-first implementation that includes create, update, and delete guidance.
 Additional evidence ledger:
 - Source file: components/Inventory.tsx
 - Source line: 1228
