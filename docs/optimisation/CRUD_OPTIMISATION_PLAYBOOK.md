@@ -2310,90 +2310,8 @@ Additional evidence ledger:
 Operation: Create
 Target entity: app_settings
 Source: supabase/migrations/001_initial_schema.sql:39
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Store-level runtime configuration and pricing/tax behavior controls.
-Business purpose: Store-level runtime configuration and pricing/tax behavior controls.
-Callsite evidence:
-- Evidence line: -- ========================
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:39
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:39
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:39
-Frontend output surface:
-- Surface: components/Settings.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/Dashboard.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0001
-- CRUD-0002
-- CRUD-0003
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Linked dependency CRUD IDs: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:39, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
 
-Additional evidence ledger:
-- Source file: supabase/migrations/001_initial_schema.sql
-- Source line: 39
-- Caller: migration_statement
-- Operation class normalization: Create
-- Target normalization: app_settings
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: none_inline
-- Trigger detail: migration apply-time execution
-- Frontend surfaces detail: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Dependency IDs detail: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
-- Inference markers: sql_callsite_parsed_from_statement
+Note: Migration/schema evidence only — runtime read/write behavior has been consolidated under `CRUD-0280` (see that entry for runtime guidance).
 
 ## CRUD-0005 Create app settings
 <a id="crud-0005-create-app-settings"></a>
@@ -2401,90 +2319,8 @@ Additional evidence ledger:
 Operation: Create
 Target entity: app_settings
 Source: supabase/migrations/001_initial_schema.sql:335
-Category: offline
-Trigger profile: migration apply-time execution
-Module purpose: Store-level runtime configuration and pricing/tax behavior controls.
-Business purpose: Store-level runtime configuration and pricing/tax behavior controls.
-Callsite evidence:
-- Evidence line: -- Settings (single row)
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:335
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: required_or_nullable_by_schema
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:335
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:335
-Frontend output surface:
-- Surface: components/Settings.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/Dashboard.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0001
-- CRUD-0002
-- CRUD-0003
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-Risk profile: medium_duplicate_or_idempotency_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Linked dependency CRUD IDs: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
-Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:335, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
 
-Additional evidence ledger:
-- Source file: supabase/migrations/001_initial_schema.sql
-- Source line: 335
-- Caller: migration_statement
-- Operation class normalization: Create
-- Target normalization: app_settings
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: none_inline
-- Trigger detail: migration apply-time execution
-- Frontend surfaces detail: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Dependency IDs detail: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
-- Inference markers: sql_callsite_parsed_from_statement
+Note: Migration/schema evidence only — runtime read/write behavior has been consolidated under `CRUD-0280` (see that entry for runtime guidance).
 
 ## CRUD-0006 Update app settings
 <a id="crud-0006-update-app-settings"></a>
@@ -2492,90 +2328,8 @@ Additional evidence ledger:
 Operation: Update
 Target entity: app_settings
 Source: components/Settings.tsx:97
-Category: runtime UI
-Trigger profile: component render-driven or event-driven execution
-Module purpose: Store-level runtime configuration and pricing/tax behavior controls.
-Business purpose: Store-level runtime configuration and pricing/tax behavior controls.
-Callsite evidence:
-- Evidence line: updateSettings({
-- Caller function/module: thermalPrinterNameToSave
-- Source reference: components/Settings.tsx:97
-Request payload contract:
-- Field: inferred_from_component_action:updateSettings
-  - Inferred type: string(ISO date/time)
-  - Required/optional: optional_or_partial
-  - Source of value: caller thermalPrinterNameToSave in components/Settings.tsx:97
-  - Confidence: explicit_in_callsite
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-  - Evidence: components/Settings.tsx:97
-Frontend output surface:
-- Surface: components/Settings.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/Dashboard.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0001
-- CRUD-0002
-- CRUD-0003
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-Risk profile: medium_consistency_and_stale-read_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: inferred_from_component_action:updateSettings
-- Trigger timing: component render-driven or event-driven execution
-- Frontend components: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Linked dependency CRUD IDs: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
-Optimisation recommendation:
-- Keep payload contract stable at components/Settings.tsx:97, but isolate mutable fields to only inferred_from_component_action:updateSettings to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is component render-driven or event-driven execution, so failures must not duplicate side-effects.
-Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
 
-Additional evidence ledger:
-- Source file: components/Settings.tsx
-- Source line: 97
-- Caller: thermalPrinterNameToSave
-- Operation class normalization: Update
-- Target normalization: app_settings
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: inferred_from_component_action:updateSettings
-- Trigger detail: component render-driven or event-driven execution
-- Frontend surfaces detail: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Dependency IDs detail: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
-- Inference markers: frontend_trigger_callsite
+Note: UI callsite evidence only — runtime read/write behavior has been consolidated under `CRUD-0280` (see that entry for runtime guidance).
 
 ## CRUD-0007 Update app settings
 <a id="crud-0007-update-app-settings"></a>
@@ -2583,90 +2337,42 @@ Additional evidence ledger:
 Operation: Update
 Target entity: app_settings
 Source: supabase/migrations/001_initial_schema.sql:289
-Category: offline
-Trigger profile: migration apply-time execution
+
+Note: Migration/schema evidence only — runtime read/write behavior has been consolidated under `CRUD-0280` (see that entry for runtime guidance).
+ - Inference markers: sql_callsite_parsed_from_statement
+
+## CRUD-0280 Runtime app_settings (Consolidated)
+<a id="crud-0280-runtime-app-settings"></a>
+
+Operation: Read / Update (runtime)
+Target entity: app_settings
+Source: components/Settings.tsx:97, context/StoreContext.tsx
+Category: runtime (local-only)
+Trigger profile: component event-driven (user action)
 Module purpose: Store-level runtime configuration and pricing/tax behavior controls.
 Business purpose: Store-level runtime configuration and pricing/tax behavior controls.
 Callsite evidence:
-- Evidence line: ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-- Caller function/module: migration_statement
-- Source reference: supabase/migrations/001_initial_schema.sql:289
-Request payload contract:
-- Field: inferred_from_callsite_context
-  - Inferred type: inferred
-  - Required/optional: optional_or_partial
-  - Source of value: caller migration_statement in supabase/migrations/001_initial_schema.sql:289
-  - Confidence: inferred_from_expression
-Response payload contract:
-- Field: mutation_status
-  - Usage classification: rendered+logic
-  - UI/logical sink: render paths: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-  - Evidence: supabase/migrations/001_initial_schema.sql:289
-Frontend output surface:
-- Surface: components/Settings.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/POS.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-- Surface: components/Dashboard.tsx
-  - Mapping basis: target app_settings appears in this component domain.
-Linked CRUD dependencies:
-- CRUD-0001
-- CRUD-0002
-- CRUD-0003
-- CRUD-0113
-- CRUD-0114
-- CRUD-0115
-- CRUD-0116
-- CRUD-0117
-- CRUD-0118
-- CRUD-0119
-- CRUD-0120
-- CRUD-0121
-- CRUD-0122
-- CRUD-0123
-- CRUD-0124
-- CRUD-0125
-- CRUD-0126
-- CRUD-0127
-- CRUD-0128
-- CRUD-0129
-Risk profile: medium_consistency_and_stale-read_risk
-Concrete callsite facts used for optimization decisions:
-- Selected columns: none_explicit (inferred wildcard or mutation call)
-- Filters: no_explicit_filters_detected
-- Sort/order: no_explicit_ordering
-- Pagination/windowing: no_explicit_pagination_or_windowing
-- Payload fields: payload_fields_not_inline (inferred from function context)
-- Trigger timing: migration apply-time execution
-- Frontend components: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Linked dependency CRUD IDs: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
+- Evidence lines: components/Settings.tsx:97, context/StoreContext.tsx:loadAll()/refreshFromSupabase()
+- Caller function/module: updateSettings / StoreContext runtime handlers
+- Source reference: components/Settings.tsx:97; context/StoreContext.tsx
 Optimisation recommendation:
-- Keep payload contract stable at supabase/migrations/001_initial_schema.sql:289, but isolate mutable fields to only payload_fields_not_inline (inferred from function context) to reduce write amplification.
-- Attach mutation-specific invalidation for linked reads (CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129) and keep refresh scope bounded to targets impacted by this write.
-- Preserve retry/idempotency behavior for this flow; trigger profile is migration apply-time execution, so failures must not duplicate side-effects.
+- Consolidate all runtime read/write behavior for `app_settings` under this CRUD entry.
+- Persist runtime settings locally only: use `electron-store` (desktop) or `localStorage` (web) under the key `app_settings` and surface reads from `StoreContext` so the UI always reads the local cache.
+- Avoid performing remote writes to Supabase for routine runtime updates. Keep migration entries (CRUD-0004/0005/0007) for schema and initial-seed evidence only.
+- If central replication is required, implement an explicit sync mechanism (separate from runtime UI writes) with clear idempotency and permission controls.
+
 Validation checklist:
-- Confirm role/permission parity for this operation path and connected UI action gates.
-- Confirm RLS/policy assumptions still hold for this target in deployed database.
-- Confirm dependency refresh only touches linked CRUD IDs listed above.
-- Confirm payload and response contracts remain backward compatible for existing consumers.
-- Confirm offline/retry behavior does not duplicate side effects for this callsite.
-Estimated impact (modeled): Expected reduction in over-fetch refetch fan-out and lower write amplification; consistency improves via explicit invalidation boundaries.
+- Confirm `components/Settings.tsx` reads and saves settings from the local settings store (`electron-store`/`localStorage`) and updates `StoreContext` accordingly.
+- Confirm runtime updates do not trigger Supabase mutations during normal UI operations.
+- Confirm migrations remain present in CRUD-0004/0005/0007 as historical/schema evidence.
+- Confirm monitoring / logging exists for any explicit sync flows that mirror local settings to remote systems.
+
+Estimated impact (modeled): Reduces network write amplification and improves UI responsiveness; central sync must be explicit.
 
 Additional evidence ledger:
-- Source file: supabase/migrations/001_initial_schema.sql
-- Source line: 289
-- Caller: migration_statement
-- Operation class normalization: Update
-- Target normalization: app_settings
-- Selected columns detail: none_explicit
-- Filters detail: none_explicit
-- Ordering detail: none_explicit
-- Pagination detail: none_explicit
-- Payload detail: none_inline
-- Trigger detail: migration apply-time execution
-- Frontend surfaces detail: components/Settings.tsx, components/POS.tsx, components/Dashboard.tsx
-- Dependency IDs detail: CRUD-0001, CRUD-0002, CRUD-0003, CRUD-0113, CRUD-0114, CRUD-0115, CRUD-0116, CRUD-0117, CRUD-0118, CRUD-0119, CRUD-0120, CRUD-0121, CRUD-0122, CRUD-0123, CRUD-0124, CRUD-0125, CRUD-0126, CRUD-0127, CRUD-0128, CRUD-0129
-- Inference markers: sql_callsite_parsed_from_statement
+- Source files: components/Settings.tsx, context/StoreContext.tsx, services/localSettings.ts
+- Source lines: components/Settings.tsx:97; context/StoreContext.tsx:loadAll()
+- Inference markers: callsite evidence + prior analysis
 
 ## CRUD-0008 Read branches
 <a id="crud-0008-read-branches"></a>
