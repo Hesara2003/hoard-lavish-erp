@@ -7,18 +7,21 @@ export const CUR = 'LKR';
 
 export const INITIAL_BRANCHES: Branch[] = [
   {
-    id: 'b1',
+    id: 'b0000000-0000-0000-0000-000000000001',
     name: 'Ethul Kotte',
-    address: '123 Fashion Ave, New York, NY',
-    phone: '212-555-0199'
+    address: 'veediya bandara mw , ethul kotte ',
+    phone: '0741774321',
+    thermalPrinterName: 'POSPrinter POS80',
+    barcodePrinterName: 'Xprinter XP-T451B',
   },
   {
-    id: 'b2',
-    name: 'Mount-Lavinia',
-    address: '456 Soho St, New York, NY',
-    phone: '212-555-0200',
-    thermalPrinterName: 'XP - Q80B'
-  }
+    id: 'b0000000-0000-0000-0000-000000000002',
+    name: 'Mount Lavinia',
+    address: '273 GALLE RD MOUNT LAVINIA',
+    phone: '0741774321',
+    thermalPrinterName: 'POS-80 (copy 1)',
+    barcodePrinterName: 'Xprinter XP-T451B',
+  },
 ];
 
 export const INITIAL_USERS: User[] = [
