@@ -7,6 +7,12 @@ import { calculateCartTotals } from '../utils/cart';
 import { generateInvoiceNumber, generateTransferNumber } from '../utils/generators';
 import { isLikelyConnectivityIssue, extractDbErrorMessage, DbLikeError } from '../utils/errors';
 import { isUuid, makeUuid } from '../utils/ids';
+import { loadCachedProducts, saveCachedProducts, applyStockDelta, mergeBranchStock } from '../services/localProducts';
+
+const getTodayDate = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 interface StoreContextType {
   products: Product[];
@@ -468,9 +474,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const loadAll = async () => {
       setIsLoading(true);
       try {
+        // Products: serve from daily cache if available, otherwise full fetch
+        const today = getTodayDate();
+        const cached = loadCachedProducts();
+        const catalogPromise = (cached && cached.cachedDate === today)
+          ? Promise.resolve(cached.products)
+          : db.fetchProductsWithStock();
+
         const [
+          catalogData,
+          freshStockRows,
           branchesData,
-          productsData,
           customersData,
           salesData,
           stockData,
@@ -484,8 +498,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           damagedGoodsData,
           exchangesData,
         ] = await Promise.all([
+          catalogPromise,
+          db.fetchBranchStock(),  // always reconcile quantities on mount
           db.fetchBranches(),
-          db.fetchProductsWithStock(),
           db.fetchCustomers(),
           db.fetchSales(),
           db.fetchStockMovements(),
@@ -499,6 +514,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           db.fetchDamagedGoods(),
           db.fetchExchanges().catch(() => []),
         ]);
+
+        // Merge fresh qty into catalog and persist
+        const productsData = mergeBranchStock(catalogData, freshStockRows);
+        saveCachedProducts(productsData, today);
 
         // Load stock transfers separately (table may not exist yet)
         let stockTransfersData: StockTransfer[] = [];
@@ -565,7 +584,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!useSupabase) return { success: false, error: 'Cloud database not configured. Using local storage only.' };
     try {
       const [
-        productsData,
         customersData,
         salesData,
         stockData,
@@ -577,7 +595,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         damagedGoodsData,
         exchangesData,
       ] = await Promise.all([
-        db.fetchProductsWithStock(),
         db.fetchCustomers(),
         db.fetchSales(),
         db.fetchStockMovements(),
@@ -595,7 +612,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stockTransfersData = await db.fetchStockTransfers();
       } catch (_) { /* table may not exist */ }
 
-      setProducts(productsData);
       setCustomers(customersData);
       setSalesHistory(salesData);
       setStockHistory(stockData);
@@ -609,7 +625,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setStockTransfers(stockTransfersData);
       setLastSyncTime(new Date());
       setIsCloudConnected(true);
-      return { success: true, productCount: productsData.length };
+      return { success: true };
     } catch (err: unknown) {
       console.error('Failed to refresh data from Supabase', err);
       const errorMsg = extractDbErrorMessage(err, 'Failed to sync with cloud database', 'general');
@@ -643,10 +659,53 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (channelRef) supabase.removeChannel(channelRef);
 
       const onEvent = () => debouncedRefreshRef.current();
+
+      // Qty-delta handler: patch only the changed product_branch_stock row
+      const onBranchStockEvent = (payload: any) => {
+        const { eventType } = payload;
+        const row = eventType === 'DELETE' ? (payload.old ?? {}) : (payload.new ?? {});
+        const { product_id, branch_id, quantity } = row;
+        if (!product_id || !branch_id) return;
+        const qty = eventType === 'DELETE' ? 0 : Number(quantity);
+        setProducts(prev => {
+          const updated = applyStockDelta(prev, product_id, branch_id, qty);
+          saveCachedProducts(updated, getTodayDate());
+          return updated;
+        });
+      };
+
+      // Catalog patch handler: update/insert/delete a single product row
+      const onProductsEvent = (payload: any) => {
+        const { eventType } = payload;
+        if (eventType === 'DELETE') {
+          const id = payload.old?.id;
+          if (id) {
+            setProducts(prev => {
+              const updated = prev.filter(p => p.id !== id);
+              saveCachedProducts(updated, getTodayDate());
+              return updated;
+            });
+          }
+          return;
+        }
+        const row = payload.new;
+        if (!row?.id) return;
+        setProducts(prev => {
+          const existing = prev.find(p => p.id === row.id);
+          const branchStock = existing?.branchStock ?? {};
+          const patched = db.mapProduct(row, branchStock);
+          const updated = existing
+            ? prev.map(p => p.id === row.id ? patched : p)
+            : [...prev, patched];
+          saveCachedProducts(updated, getTodayDate());
+          return updated;
+        });
+      };
+
       const channel = supabase
         .channel(`db-sync-${Date.now()}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'product_branch_stock' }, onEvent)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, onProductsEvent)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'product_branch_stock' }, onBranchStockEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, onEvent)
@@ -667,6 +726,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setRealtimeStatus(status as 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR');
           if (status === 'SUBSCRIBED') {
             retryCount = 0;
+            // Reconcile quantities missed while disconnected
+            db.fetchBranchStock().then(rows => {
+              setProducts(prev => {
+                const updated = mergeBranchStock(prev, rows);
+                saveCachedProducts(updated, getTodayDate());
+                return updated;
+              });
+            }).catch(err => console.error('Stock reconcile failed on reconnect', err));
           }
           if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
             retryCount++;
