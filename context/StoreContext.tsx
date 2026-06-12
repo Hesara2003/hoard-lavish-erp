@@ -7,6 +7,7 @@ import { calculateCartTotals } from '../utils/cart';
 import { generateInvoiceNumber, generateTransferNumber } from '../utils/generators';
 import { isLikelyConnectivityIssue, extractDbErrorMessage, DbLikeError } from '../utils/errors';
 import { isUuid, makeUuid } from '../utils/ids';
+import { loadLocalSettings, saveLocalSettings, setLocalSettings } from '../services/localSettings';
 
 interface StoreContextType {
   products: Product[];
@@ -91,6 +92,7 @@ interface StoreContextType {
   deleteUser: (id: string) => void;
 
   updateSettings: (settings: Partial<AppSettings>) => void;
+  refreshSettings: () => Promise<void>;
 
   exportData: () => string;
   importData: (jsonData: string) => boolean;
@@ -139,7 +141,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [damagedGoods, setDamagedGoods] = useState<DamagedGood[]>([]);
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
+  const [settings, setSettings] = useState<AppSettings>(loadLocalSettings());
 
   const [currentView, setCurrentView] = useState<ViewState>('DASHBOARD');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -478,7 +480,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           supplierTxnData,
           expensesData,
           usersData,
-          settingsData,
           categoriesData,
           brandsData,
           damagedGoodsData,
@@ -493,7 +494,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           db.fetchSupplierTransactions(),
           db.fetchExpenses(),
           db.fetchUsers(),
-          db.fetchSettings(),
           db.fetchCategories(),
           db.fetchBrands(),
           db.fetchDamagedGoods(),
@@ -536,7 +536,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSupplierTransactions(supplierTxnData);
         setExpenses(expensesData);
         setUsers(usersData);
-        setSettings(settingsData);
         setCategories(categoriesData);
         setBrands(brandsData);
         setDamagedGoods(damagedGoodsData);
@@ -1969,7 +1968,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   const updateSettings = (updates: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...updates }));
+    saveLocalSettings(updates);
     void executeWithOfflineQueue('UPDATE_SETTINGS', { updates }, () => db.updateSettings(updates), { fallback: 'Failed to update settings' });
+  };
+
+  const refreshSettings = async () => {
+    if (!useSupabase) return;
+    try {
+      const fresh = await db.fetchSettings();
+      setSettings(fresh);
+      setLocalSettings(fresh);
+    } catch (err: unknown) {
+      console.error('Failed to refresh settings:', err);
+    }
   };
 
   // ============================================================
@@ -2129,7 +2140,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addExpense, deleteExpense,
       addDamagedGood, deleteDamagedGood,
       addUser, updateUser, deleteUser,
-      updateSettings, exportData, importData,
+      updateSettings, refreshSettings, exportData, importData,
       syncData, syncOfflineQueue, retryOfflineItem, removeOfflineItem, dismissOfflinePopup, dismissDbError,
       login, logout, setView
     }}>
