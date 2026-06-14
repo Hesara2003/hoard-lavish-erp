@@ -6,12 +6,12 @@ import { normalizeBranchName, isMountLaviniaBranch, getThermalPrinterForBranch, 
 import { parseCSV, CSV_COLUMNS, CSV_REQUIRED, CSV_SAMPLE } from '../utils/csv';
 
 const Settings: React.FC = () => {
-  const { 
-    settings, updateSettings, 
-    users, addUser, updateUser, deleteUser, 
+  const {
+    settings, updateSettings, refreshSettings,
+    users, addUser, updateUser, deleteUser,
     branches, currentBranch, updateBranch,
     addProduct,
-    exportData, importData 
+    exportData, importData
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'USERS' | 'DATA' | 'IMPORT'>('GENERAL');
@@ -54,6 +54,10 @@ const Settings: React.FC = () => {
       barcodePrinterName: currentBranch.barcodePrinterName || '',
     }));
   }, [currentBranch.id]);
+
+  useEffect(() => {
+    refreshSettings();
+  }, []);
 
   // Thermal printer list from Electron
   const [availablePrinters, setAvailablePrinters] = useState<string[]>([]);
@@ -384,8 +388,14 @@ const Settings: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex justify-end pt-2">
-                <button 
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => refreshSettings()}
+                  className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors font-medium"
+                >
+                  Refresh
+                </button>
+                <button
                   onClick={handleSaveGeneral}
                   className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium shadow-sm"
                 >

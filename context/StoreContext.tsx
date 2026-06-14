@@ -10,6 +10,7 @@ import { loadLocalBranches, saveLocalBranches } from '../services/localBranches'
 import { loadCachedProducts, saveCachedProducts, applyStockDelta, mergeBranchStock } from '../services/localProducts';
 import * as localCustomers from '../services/localCustomers';
 import { loadLocalSuppliers, saveLocalSuppliers } from '../services/localSuppliers';
+import { loadLocalSettings, saveLocalSettings, setLocalSettings } from '../services/localSettings';
 
 const getTodayDate = (): string => {
   const d = new Date();
@@ -102,6 +103,7 @@ interface StoreContextType {
   deleteUser: (id: string) => void;
 
   updateSettings: (settings: Partial<AppSettings>) => void;
+  refreshSettings: () => Promise<void>;
 
   exportData: () => string;
   importData: (jsonData: string) => boolean;
@@ -151,7 +153,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [damagedGoods, setDamagedGoods] = useState<DamagedGood[]>([]);
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
+  const [settings, setSettings] = useState<AppSettings>(loadLocalSettings());
 
   const [currentView, setCurrentView] = useState<ViewState>('DASHBOARD');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -493,7 +495,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           freshStockRows,
           salesData,
           usersData,
-          settingsData,
           categoriesData,
           brandsData,
           damagedGoodsData,
@@ -505,7 +506,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
           // supplier_transactions excluded — lazy fetched on the Suppliers page
           db.fetchUsers(),
-          db.fetchSettings(),
           db.fetchCategories(),
           db.fetchBrands(),
           db.fetchDamagedGoods(),
@@ -546,7 +546,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setProducts(productsData);
         setSalesHistory(salesData);
         setUsers(usersData);
-        setSettings(settingsData);
         setCategories(categoriesData);
         setBrands(brandsData);
         setDamagedGoods(damagedGoodsData);
@@ -2022,7 +2021,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   const updateSettings = (updates: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...updates }));
+    saveLocalSettings(updates);
     void executeWithOfflineQueue('UPDATE_SETTINGS', { updates }, () => db.updateSettings(updates), { fallback: 'Failed to update settings' });
+  };
+
+  const refreshSettings = async () => {
+    if (!useSupabase) return;
+    try {
+      const fresh = await db.fetchSettings();
+      setSettings(fresh);
+      setLocalSettings(fresh);
+    } catch (err: unknown) {
+      console.error('Failed to refresh settings:', err);
+    }
   };
 
   // ============================================================
@@ -2182,7 +2193,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addExpense, deleteExpense,
       addDamagedGood, deleteDamagedGood,
       addUser, updateUser, deleteUser,
-      updateSettings, exportData, importData,
+      updateSettings, refreshSettings, exportData, importData,
       syncData, syncOfflineQueue, retryOfflineItem, removeOfflineItem, dismissOfflinePopup, dismissDbError,
       login, logout, setView
     }}>
