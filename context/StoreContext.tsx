@@ -1,4 +1,3 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Product, CartItem, SalesRecord, ViewState, Customer, StockMovement, Branch, Supplier, SupplierTransaction, Expense, User, AppSettings, DamagedGood, StockTransfer, StockTransferItem, ExchangeRecord, OfflineQueueItem, OfflinePopupState, OfflineOperationType } from '../types';
 import { INITIAL_CATEGORIES, INITIAL_BRANDS, INITIAL_BRANCHES, INITIAL_USERS, INITIAL_SETTINGS } from '../constants';
 import * as db from '../services/supabaseService';
@@ -7,6 +6,7 @@ import { calculateCartTotals } from '../utils/cart';
 import { generateInvoiceNumber, generateTransferNumber } from '../utils/generators';
 import { isLikelyConnectivityIssue, extractDbErrorMessage, DbLikeError } from '../utils/errors';
 import { isUuid, makeUuid } from '../utils/ids';
+import { loadLocalBranches, saveLocalBranches } from '../services/localBranches';
 
 interface StoreContextType {
   products: Product[];
@@ -122,8 +122,9 @@ const isSupabaseConfigured = (): boolean => {
 const OFFLINE_QUEUE_STORAGE_KEY = 'hoard_offline_queue_v1';
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [branches, setBranches] = useState<Branch[]>(INITIAL_BRANCHES);
-  const [currentBranch, setCurrentBranch] = useState<Branch>(INITIAL_BRANCHES[0]);
+  const _localBranches = loadLocalBranches();
+  const [branches, setBranches] = useState<Branch[]>(_localBranches);
+  const [currentBranch, setCurrentBranch] = useState<Branch>(_localBranches[0]);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -469,7 +470,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsLoading(true);
       try {
         const [
-          branchesData,
           productsData,
           customersData,
           salesData,
@@ -484,7 +484,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           damagedGoodsData,
           exchangesData,
         ] = await Promise.all([
-          db.fetchBranches(),
           db.fetchProductsWithStock(),
           db.fetchCustomers(),
           db.fetchSales(),
@@ -527,7 +526,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch (_) { /* ignore parse errors */ }
         }
 
-        setBranches(branchesData);
         setProducts(productsData);
         setCustomers(customersData);
         setSalesHistory(salesData);
@@ -542,7 +540,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setDamagedGoods(damagedGoodsData);
         setStockTransfers(stockTransfersData);
         setExchangeHistory(exchangeData);
-        if (branchesData.length > 0) setCurrentBranch(branchesData[0]);
+
         setIsCloudConnected(true);
         setLastSyncTime(new Date());
       } catch (err: unknown) {
@@ -660,7 +658,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .on('postgres_changes', { event: '*', schema: 'public', table: 'supplier_transactions' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'damaged_goods' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, onEvent)
         .subscribe((status) => {
           console.log('Realtime subscription status:', status);
           if (unmounted) return;
@@ -731,57 +728,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addBranch = (branchInput: Omit<Branch, 'id'> & { id?: string }) => {
-    if (!useSupabase) {
-      const localBranch: Branch = {
-        ...branchInput,
-        id: isUuid(branchInput.id || '') ? (branchInput.id as string) : makeUuid(),
-      };
-      setBranches(prev => [...prev, localBranch]);
-      setProducts(prev => prev.map(p => ({
-        ...p,
-        branchStock: { ...p.branchStock, [localBranch.id]: 0 }
-      })));
-      return;
-    }
-
-    void (async () => {
-      const localBranch: Branch = {
-        ...branchInput,
-        id: isUuid(branchInput.id || '') ? (branchInput.id as string) : makeUuid(),
-      };
-      const branchForSave: Omit<Branch, 'id'> & { id?: string } = { ...branchInput, id: localBranch.id };
-      setBranches(prev => [...prev, localBranch]);
-      setProducts(prev => prev.map(p => ({
-        ...p,
-        branchStock: { ...p.branchStock, [localBranch.id]: 0 }
-      })));
-
-      const ok = await executeWithOfflineQueue(
-        'ADD_BRANCH',
-        { branch: branchForSave, branchId: localBranch.id, productIds: products.map(p => p.id) },
-        async () => {
-          const savedBranch = await db.insertBranch(branchForSave);
-          setBranches(prev => prev.map(b => b.id === localBranch.id ? savedBranch : b));
-          await db.initializeBranchStock(savedBranch.id, products.map(p => p.id));
-        },
-        { fallback: 'Failed to add branch' }
-      );
-
-      if (!ok) return;
-    })();
+    const localBranch: Branch = {
+      ...branchInput,
+      id: isUuid(branchInput.id || '') ? (branchInput.id as string) : makeUuid(),
+    };
+    setBranches(prev => {
+      const updated = [...prev, localBranch];
+      saveLocalBranches(updated);
+      return updated;
+    });
+    setProducts(prev => prev.map(p => ({
+      ...p,
+      branchStock: { ...p.branchStock, [localBranch.id]: 0 }
+    })));
   };
 
   const updateBranch = (id: string, updates: Partial<Branch>) => {
-    setBranches(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+    setBranches(prev => {
+      const updated = prev.map(b => b.id === id ? { ...b, ...updates } : b);
+      saveLocalBranches(updated);
+      return updated;
+    });
     if (currentBranch.id === id) {
       setCurrentBranch(prev => ({ ...prev, ...updates }));
     }
-    void executeWithOfflineQueue(
-      'UPDATE_BRANCH',
-      { id, updates },
-      () => db.updateBranch(id, updates),
-      { fallback: 'Failed to update branch' }
-    );
   };
 
   // ============================================================
