@@ -8,6 +8,7 @@ import { isLikelyConnectivityIssue, extractDbErrorMessage, DbLikeError } from '.
 import { isUuid, makeUuid } from '../utils/ids';
 import { loadLocalBranches, saveLocalBranches } from '../services/localBranches';
 import { loadCachedProducts, saveCachedProducts, applyStockDelta, mergeBranchStock } from '../services/localProducts';
+import * as localCustomers from '../services/localCustomers';
 
 const getTodayDate = (): string => {
   const d = new Date();
@@ -52,6 +53,8 @@ interface StoreContextType {
   addCustomer: (customer: Customer) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
   deleteCustomer: (id: string) => void;
+  loadCustomers: () => Promise<void>;
+  refreshCustomers: () => Promise<void>;
 
   addToCart: (product: Product) => string;
   removeFromCart: (productId: string) => void;
@@ -153,6 +156,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isLoading, setIsLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const customerLoadedRef = useRef(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTING' | 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR' | null>(null);
@@ -485,7 +489,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const [
           catalogData,
           freshStockRows,
-          customersData,
           salesData,
           stockData,
           suppliersData,
@@ -500,7 +503,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ] = await Promise.all([
           catalogPromise,
           db.fetchBranchStock(),  // always reconcile quantities on mount
-          db.fetchCustomers(),
           db.fetchSales(),
           db.fetchStockMovements(),
           db.fetchSuppliers(),
@@ -546,7 +548,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         setProducts(productsData);
-        setCustomers(customersData);
         setSalesHistory(salesData);
         setStockHistory(stockData);
         setSuppliers(suppliersData);
@@ -582,7 +583,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!useSupabase) return { success: false, error: 'Cloud database not configured. Using local storage only.' };
     try {
       const [
-        customersData,
         salesData,
         stockData,
         suppliersData,
@@ -593,7 +593,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         damagedGoodsData,
         exchangesData,
       ] = await Promise.all([
-        db.fetchCustomers(),
         db.fetchSales(),
         db.fetchStockMovements(),
         db.fetchSuppliers(),
@@ -610,7 +609,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stockTransfersData = await db.fetchStockTransfers();
       } catch (_) { /* table may not exist */ }
 
-      setCustomers(customersData);
       setSalesHistory(salesData);
       setStockHistory(stockData);
       setSuppliers(suppliersData);
@@ -704,7 +702,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .channel(`db-sync-${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, onProductsEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'product_branch_stock' }, onBranchStockEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'exchanges' }, onEvent)
@@ -937,12 +934,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const tempId = isUuid(customer.id) ? customer.id : makeUuid();
     const normalizedCustomer = { ...customer, id: tempId };
     setCustomers(prev => [...prev, normalizedCustomer]);
+    localCustomers.upsertCachedCustomer(normalizedCustomer);
     void executeWithOfflineQueue(
       'ADD_CUSTOMER',
       { customer: normalizedCustomer },
       async () => {
         const savedCustomer = await db.insertCustomer(normalizedCustomer);
         setCustomers(prev => prev.map(c => c.id === tempId ? savedCustomer : c));
+        localCustomers.upsertCachedCustomer(savedCustomer);
       },
       { fallback: 'Failed to add customer' }
     );
@@ -950,6 +949,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateCustomer = (id: string, updates: Partial<Customer>) => {
     setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    const updated = { ...customers.find(c => c.id === id)!, ...updates };
+    localCustomers.upsertCachedCustomer(updated);
     void executeWithOfflineQueue(
       'UPDATE_CUSTOMER',
       { id, updates },
@@ -960,12 +961,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteCustomer = (id: string) => {
     setCustomers(prev => prev.filter(c => c.id !== id));
+    localCustomers.removeCachedCustomer(id);
     void executeWithOfflineQueue(
       'DELETE_CUSTOMER',
       { id },
       () => db.deleteCustomer(id),
       { fallback: 'Failed to delete customer' }
     );
+  };
+
+  const loadCustomers = async () => {
+    if (customerLoadedRef.current && localCustomers.isCacheFresh()) return;
+    if (localCustomers.isCacheFresh()) {
+      setCustomers(localCustomers.loadCachedCustomers());
+      customerLoadedRef.current = true;
+      return;
+    }
+    const data = await db.fetchCustomers();
+    setCustomers(data);
+    localCustomers.saveCachedCustomers(data, new Date().toISOString().slice(0, 10));
+    customerLoadedRef.current = true;
+  };
+
+  const refreshCustomers = async () => {
+    const data = await db.fetchCustomers();
+    setCustomers(data);
+    localCustomers.saveCachedCustomers(data, new Date().toISOString().slice(0, 10));
+    customerLoadedRef.current = true;
   };
 
   // ============================================================
@@ -2158,7 +2180,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       currentBranch, currentUser, currentView, isLoading, dbError, offlineQueue, offlinePopup, lastSyncTime, isCloudConnected, realtimeStatus,
       setBranch, addBranch, updateBranch,
       addProduct, updateProduct, deleteProduct, getProductSalesUsage,
-      addCustomer, updateCustomer, deleteCustomer,
+      addCustomer, updateCustomer, deleteCustomer, loadCustomers, refreshCustomers,
       addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, clearCart,
       completeSale, updateSale, deleteSale, completeExchange, adjustStock, transferStock, deleteTransfer, refreshTransfers,
       addCategory, removeCategory, addBrand, removeBrand,
