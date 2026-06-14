@@ -73,6 +73,7 @@ interface StoreContextType {
   ) => SalesRecord;
   updateSale: (saleId: string, updatedItems: CartItem[], discount: number, customerId?: string) => SalesRecord;
   deleteSale: (saleId: string) => void;
+  refreshSalesHistory: (options?: import('../services/db/sales').FetchSalesOptions) => Promise<void>;
   completeExchange: (exchange: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>) => ExchangeRecord;
   adjustStock: (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => StockMovement | null;
   transferStock: (toBranchId: string, items: StockTransferItem[], notes: string) => StockTransfer;
@@ -495,7 +496,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const [
           catalogData,
           freshStockRows,
-          salesData,
           categoriesData,
           brandsData,
           damagedGoodsData,
@@ -503,7 +503,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ] = await Promise.all([
           catalogPromise,
           db.fetchBranchStock(),  // always reconcile quantities on mount
-          db.fetchSales(),
+          // sales excluded — lazy fetched per-page via scoped fetchSales()
           // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
           // supplier_transactions excluded — lazy fetched on the Suppliers page
           // suppliers / expenses / users / settings excluded — local-first or lazy
@@ -545,7 +545,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         setProducts(productsData);
-        setSalesHistory(salesData);
         setCategories(categoriesData);
         setBrands(brandsData);
         setDamagedGoods(damagedGoodsData);
@@ -574,13 +573,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!useSupabase) return { success: false, error: 'Cloud database not configured. Using local storage only.' };
     try {
       const [
-        salesData,
         categoriesData,
         brandsData,
         damagedGoodsData,
         exchangesData,
       ] = await Promise.all([
-        db.fetchSales(),
+        // sales excluded — lazy fetched per-page via scoped fetchSales()
         // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
         // supplier_transactions excluded — lazy fetched on the Suppliers page
         db.fetchCategories(),
@@ -594,7 +592,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stockTransfersData = await db.fetchStockTransfers();
       } catch (_) { /* table may not exist */ }
 
-      setSalesHistory(salesData);
       setCategories(categoriesData);
       setBrands(brandsData);
       setDamagedGoods(damagedGoodsData);
@@ -683,8 +680,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .channel(`db-sync-${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, onProductsEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'product_branch_stock' }, onBranchStockEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, onEvent)
+        // sales + sale_items excluded — lazy fetched per-page via scoped fetchSales()
         .on('postgres_changes', { event: '*', schema: 'public', table: 'exchanges' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_items' }, onEvent)
         // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
@@ -1022,6 +1018,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const clearCart = () => setCart([]);
+
+  // ============================================================
+  // SALES HISTORY — lazy load on demand by components
+  // ============================================================
+  const refreshSalesHistory = useCallback(async (options?: import('../services/db/sales').FetchSalesOptions): Promise<void> => {
+    if (!useSupabase) return;
+    try {
+      const data = await db.fetchSales(options ?? { limit: 200 });
+      setSalesHistory(data);
+    } catch (err) {
+      console.error('Failed to refresh sales history', err);
+    }
+  }, [useSupabase]);
 
   // ============================================================
   // SALE COMPLETION
@@ -2210,7 +2219,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addProduct, updateProduct, deleteProduct, getProductSalesUsage,
       addCustomer, updateCustomer, deleteCustomer, loadCustomers, refreshCustomers,
       addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, clearCart,
-      completeSale, updateSale, deleteSale, completeExchange, adjustStock, transferStock, deleteTransfer, refreshTransfers,
+      completeSale, updateSale, deleteSale, refreshSalesHistory, completeExchange, adjustStock, transferStock, deleteTransfer, refreshTransfers,
       addCategory, removeCategory, addBrand, removeBrand,
       refreshSuppliers, addSupplier, updateSupplier, deleteSupplier, recordSupplierExpense, addSupplierTransaction, updateSupplierTransaction, deleteSupplierTransaction,
       addExpense, deleteExpense,

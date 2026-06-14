@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Plus, Phone, Mail, Edit2, Trash2, X, Search, ChevronLeft, ShoppingBag, Star, Calendar } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { Customer } from '../types';
+import { fetchSales } from '../services/supabaseService';
+import { Customer, SalesRecord } from '../types';
 import { parseBusinessDate } from '../utils/dateTime';
 import { fmtCurrency } from '../utils/formatters';
 import ConfirmDialog from './shared/ConfirmDialog';
 
 const Customers: React.FC = () => {
-  const { customers, addCustomer, updateCustomer, deleteCustomer, loadCustomers, refreshCustomers, salesHistory, currentUser } = useStore();
+  const { customers, addCustomer, updateCustomer, deleteCustomer, loadCustomers, refreshCustomers, currentUser } = useStore();
   const isCashier = currentUser?.role === 'CASHIER';
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeView, setActiveView] = useState<'LIST' | 'PROFILE'>('LIST');
@@ -28,8 +29,16 @@ const Customers: React.FC = () => {
     c.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Customer Profile Calculations
-  const customerHistory = salesHistory.filter(s => s.customerId === selectedCustomer?.id);
+  // Customer Profile Calculations — lazy loaded on profile open
+  const [customerHistory, setCustomerHistory] = useState<SalesRecord[]>([]);
+
+  useEffect(() => {
+    if (!selectedCustomer) { setCustomerHistory([]); return; }
+    fetchSales({ customerId: selectedCustomer.id, limit: 200 })
+      .then(setCustomerHistory)
+      .catch(err => console.error('Failed to load customer sales', err));
+  }, [selectedCustomer?.id]);
+
   const lastVisit = customerHistory.length > 0
     ? parseBusinessDate(customerHistory[0].date).toLocaleDateString()
     : 'Never';
