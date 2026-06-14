@@ -492,7 +492,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           catalogData,
           freshStockRows,
           salesData,
-          supplierTxnData,
           usersData,
           settingsData,
           categoriesData,
@@ -504,7 +503,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           db.fetchBranchStock(),  // always reconcile quantities on mount
           db.fetchSales(),
           // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
-          db.fetchSupplierTransactions(),
+          // supplier_transactions excluded — lazy fetched on the Suppliers page
           db.fetchUsers(),
           db.fetchSettings(),
           db.fetchCategories(),
@@ -546,7 +545,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         setProducts(productsData);
         setSalesHistory(salesData);
-        setSupplierTransactions(supplierTxnData);
         setUsers(usersData);
         setSettings(settingsData);
         setCategories(categoriesData);
@@ -578,7 +576,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const [
         salesData,
-        supplierTxnData,
         categoriesData,
         brandsData,
         damagedGoodsData,
@@ -586,7 +583,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ] = await Promise.all([
         db.fetchSales(),
         // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
-        db.fetchSupplierTransactions(),
+        // supplier_transactions excluded — lazy fetched on the Suppliers page
         db.fetchCategories(),
         db.fetchBrands(),
         db.fetchDamagedGoods(),
@@ -599,7 +596,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch (_) { /* table may not exist */ }
 
       setSalesHistory(salesData);
-      setSupplierTransactions(supplierTxnData);
       setCategories(categoriesData);
       setBrands(brandsData);
       setDamagedGoods(damagedGoodsData);
@@ -697,7 +693,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, onEvent)
         // suppliers table excluded — lazy fetched on page open via refreshSuppliers()
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'supplier_transactions' }, onEvent)
+        // supplier_transactions excluded — lazy fetched on the Suppliers page
         .on('postgres_changes', { event: '*', schema: 'public', table: 'damaged_goods' }, onEvent)
         .subscribe((status) => {
           console.log('Realtime subscription status:', status);
