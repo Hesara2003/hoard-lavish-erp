@@ -141,6 +141,7 @@ describe('fetchSalesDailyTotals', () => {
             const mockGte    = vi.fn().mockReturnThis();
             const mockLte    = vi.fn().mockReturnThis();
             const mockLimit  = vi.fn().mockResolvedValue({ data: [], error: null });
+            const mockRange  = vi.fn().mockResolvedValue({ data: [], error: null });
 
             (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue({
                 select: mockSelect,
@@ -149,10 +150,8 @@ describe('fetchSalesDailyTotals', () => {
                 gte:    mockGte,
                 lte:    mockLte,
                 limit:  mockLimit,
+                range:  mockRange,
             });
-
-            // Make the chain resolve
-            mockOrder.mockResolvedValue({ data: [], error: null });
 
             await fetchSales({});
 

@@ -23,6 +23,7 @@ const getLocalCustomers = async () => {
 describe('localCustomers cache helpers', () => {
   beforeEach(async () => {
     vi.resetModules();
+    vi.clearAllMocks();
   });
 
   it('loadCachedCustomers returns empty array by default', async () => {
@@ -78,6 +79,7 @@ describe('loadCustomers lazy logic', () => {
 
   beforeEach(() => {
     vi.resetModules();
+    vi.clearAllMocks();
     vi.mocked(db.fetchCustomers).mockResolvedValue(mockCustomers);
   });
 
