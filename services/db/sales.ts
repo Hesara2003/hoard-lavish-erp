@@ -109,18 +109,28 @@ export interface FetchSalesOptions {
     dateTo?: string;
     paymentMethod?: string;
     limit?: number;
+    offset?: number;
+    customerId?: string;
+    search?: string;
 }
 
 export async function fetchSales(options: FetchSalesOptions = {}): Promise<SalesRecord[]> {
+    const limit = options.limit ?? 50;
+    const offset = options.offset ?? 0;
     let query = supabase
         .from('sales')
         .select('*, sale_items(*, products(id, name, sku, size, color, barcode, barcode2))')
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .range(offset, offset + limit - 1);
     if (options.branchId) query = query.eq('branch_id', options.branchId);
     if (options.dateFrom) query = query.gte('date', options.dateFrom);
     if (options.dateTo) query = query.lte('date', options.dateTo);
     if (options.paymentMethod) query = query.eq('payment_method', options.paymentMethod);
-    if (options.limit) query = query.limit(options.limit);
+    if (options.customerId) query = query.eq('customer_id', options.customerId);
+    if (options.search) {
+        const s = options.search.replace(/'/g, "''");
+        query = query.or(`invoice_number.ilike.%${s}%,customer_name.ilike.%${s}%`);
+    }
     const { data, error } = await query;
     if (error) throw error;
     return (data ?? []).map(mapSale);
@@ -256,4 +266,65 @@ export async function insertExchange(exchange: ExchangeRecord): Promise<string> 
     }
 
     return exchangeId;
+}
+
+export interface SalesDailyTotal {
+    date: string;        // YYYY-MM-DD
+    branchId: string;
+    sumAmount: number;
+    sumCost: number;
+    txCount: number;
+}
+
+export interface FetchSalesDailyTotalsOptions {
+    branchId?: string;   // omitted/undefined → all branches grouped by branch
+    dateFrom: string;
+    dateTo: string;
+}
+
+export async function fetchSalesDailyTotals(
+    options: FetchSalesDailyTotalsOptions
+): Promise<SalesDailyTotal[]> {
+    const { data, error } = await supabase.rpc('fn_sales_daily_totals', {
+        p_branch_id: options.branchId ?? null,
+        p_date_from: options.dateFrom,
+        p_date_to: options.dateTo,
+    });
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+        date: r.date,
+        branchId: r.branch_id,
+        sumAmount: Number(r.sum_amount),
+        sumCost: Number(r.sum_cost),
+        txCount: Number(r.tx_count),
+    }));
+}
+
+export interface FetchSalesSummaryOptions {
+    branchId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+}
+
+export async function fetchSalesSummary(options: FetchSalesSummaryOptions = {}): Promise<Pick<SalesRecord, 'id' | 'invoiceNumber' | 'date' | 'branchId' | 'totalAmount' | 'totalCost' | 'customerName'>[]> {
+    let query = supabase
+        .from('sales')
+        .select('id, invoice_number, date, branch_id, total_amount, total_cost, customer_name')
+        .order('date', { ascending: false });
+    if (options.branchId) query = query.eq('branch_id', options.branchId);
+    if (options.dateFrom) query = query.gte('date', options.dateFrom);
+    if (options.dateTo) query = query.lte('date', options.dateTo);
+    if (options.limit) query = query.limit(options.limit);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+        id: r.id,
+        invoiceNumber: r.invoice_number,
+        date: r.date,
+        branchId: r.branch_id,
+        totalAmount: Number(r.total_amount),
+        totalCost: Number(r.total_cost),
+        customerName: r.customer_name ?? undefined,
+    }));
 }

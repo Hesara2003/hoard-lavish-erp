@@ -1,7 +1,9 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, CreditCard, Wallet, Calendar, Trophy, Award, FileDown, BookOpen, Activity, Package, UserCheck, ArrowDownCircle, ArrowUpCircle, RefreshCw, Eye, X, Download, ArrowRightLeft, Edit2, Printer, Plus, Minus, Trash2, CheckCircle, ClipboardList } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { fetchStockMovements } from '../../services/supabaseService';
+import { StockMovement } from '../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { CartItem, SalesRecord } from '../../types';
@@ -9,6 +11,9 @@ import { parseBusinessDate } from '../../utils/dateTime';
 import { getTopRevenueAndQuantityProducts } from '../../utils/revenue';
 import { fmtCurrency } from '../../utils/formatters';
 import { CUR } from '../../constants';
+import { useDashboardSales } from './useDashboardSales';
+import { fetchExpenses } from '../../services/db/expenses';
+import type { Expense } from '../../types';
 
 type FilterMode = 'daily' | 'monthly';
 
@@ -16,9 +21,28 @@ const BRANCH_COLORS   = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6'];
 const BRANCH_PROFIT_COLORS = ['#34d399', '#60a5fa', '#fcd34d', '#f9a8d4', '#c4b5fd'];
 
 const Dashboard: React.FC = () => {
-  const { salesHistory, products, expenses, supplierTransactions, stockHistory, stockTransfers, exchangeHistory, currentUser, updateSale, deleteSale, customers, currentBranch, branches } = useStore();
+  const { products, stockTransfers, exchangeHistory, currentUser, updateSale, deleteSale, currentBranch, branches } = useStore();
+  const [localExpenses, setLocalExpenses] = useState<Expense[]>([]);
   const role = currentUser?.role || 'CASHIER';
   const isAdmin = role === 'ADMIN';
+
+  // --- Recent stock movements for activity feed (lazy, 30 most recent non-sale-out) ---
+  const [recentMovements, setRecentMovements] = useState<StockMovement[]>([]);
+  const [movementsRefreshing, setMovementsRefreshing] = useState(false);
+
+  const loadRecentMovements = useCallback(async () => {
+    setMovementsRefreshing(true);
+    try {
+      const data = await fetchStockMovements({ branchId: currentBranch.id, limit: 30, excludeSaleOuts: true });
+      setRecentMovements(data);
+    } catch (err) {
+      console.error('Failed to load recent movements', err);
+    } finally {
+      setMovementsRefreshing(false);
+    }
+  }, [currentBranch.id]);
+
+  useEffect(() => { void loadRecentMovements(); }, [loadRecentMovements]);
 
   // --- Filter State ---
   const today = new Date();
@@ -29,6 +53,24 @@ const Dashboard: React.FC = () => {
   );
   const [detailModalType, setDetailModalType] = useState<'revenue' | 'expenses' | 'profit' | null>(null);
   const [showLowStockModal, setShowLowStockModal] = useState(false);
+
+  // --- On-demand sales loaders (Dashboard-local, no global salesHistory) ---
+  const dashSales = useDashboardSales({
+    filterMode,
+    selectedDate,
+    selectedMonth,
+    branchId: currentBranch.id,
+  });
+
+  // Invalidate loaders when filter changes
+  const prevFilterRef = useRef({ filterMode, selectedDate, selectedMonth });
+  useEffect(() => {
+    const prev = prevFilterRef.current;
+    if (prev.filterMode !== filterMode || prev.selectedDate !== selectedDate || prev.selectedMonth !== selectedMonth) {
+      dashSales.invalidate();
+      prevFilterRef.current = { filterMode, selectedDate, selectedMonth };
+    }
+  }, [filterMode, selectedDate, selectedMonth]);
 
   // --- Edit Sale State ---
   const [editingSale, setEditingSale] = useState<SalesRecord | null>(null);
@@ -43,15 +85,8 @@ const Dashboard: React.FC = () => {
   const matchesDate = (dateString: string, targetDate: string) => dateString.startsWith(targetDate);
   const matchesMonth = (dateString: string, targetMonth: string) => dateString.startsWith(targetMonth);
 
-  // --- Filtered Sales (branch-scoped) ---
-  const filteredSales = useMemo(() => {
-    const branchSales = salesHistory.filter(s => s.branchId === currentBranch.id);
-    if (filterMode === 'daily') {
-      return branchSales.filter(s => matchesDate(s.date, selectedDate));
-    } else {
-      return branchSales.filter(s => matchesMonth(s.date, selectedMonth));
-    }
-  }, [salesHistory, filterMode, selectedDate, selectedMonth, currentBranch.id]);
+  // --- Filtered Sales — now loaded on-demand via dashSales ---
+  const filteredSales = dashSales.periodSales.data;
 
   // --- Filtered Exchanges (branch-scoped) ---
   const filteredExchanges = useMemo(() => {
@@ -84,11 +119,12 @@ const Dashboard: React.FC = () => {
 
   // Top Performers
   const topPerformers = useMemo(() => {
-    return getTopRevenueAndQuantityProducts(filteredSales);
-  }, [filteredSales]);
+    return getTopRevenueAndQuantityProducts(dashSales.topPerformers.data);
+  }, [dashSales.topPerformers.data]);
 
-  // Chart Data — per branch
+  // Chart Data — per branch, computed from on-demand loaded chart records
   const chartData = useMemo(() => {
+    const rawSales = dashSales.chart.data;
     if (filterMode === 'daily') {
       const days = 7;
       const data: Record<string, any>[] = [];
@@ -101,9 +137,9 @@ const Dashboard: React.FC = () => {
           name: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
         };
         branches.forEach(br => {
-          const daySales = salesHistory.filter(s => s.branchId === br.id && s.date.startsWith(dateStr));
-          const rev = daySales.reduce((sum, s) => sum + s.totalAmount, 0);
-          const cst = daySales.reduce((sum, s) => sum + (s.totalCost || 0), 0);
+          const daySales = rawSales.filter((s: any) => s.branchId === br.id && s.date.startsWith(dateStr));
+          const rev = daySales.reduce((sum: number, s: any) => sum + s.totalAmount, 0);
+          const cst = daySales.reduce((sum: number, s: any) => sum + (s.totalCost || 0), 0);
           point[`rev_${br.id}`] = rev;
           point[`profit_${br.id}`] = rev - cst;
         });
@@ -118,9 +154,9 @@ const Dashboard: React.FC = () => {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const point: Record<string, any> = { name: `${day}` };
         branches.forEach(br => {
-          const daySales = salesHistory.filter(s => s.branchId === br.id && s.date.startsWith(dateStr));
-          const rev = daySales.reduce((sum, s) => sum + s.totalAmount, 0);
-          const cst = daySales.reduce((sum, s) => sum + (s.totalCost || 0), 0);
+          const daySales = rawSales.filter((s: any) => s.branchId === br.id && s.date.startsWith(dateStr));
+          const rev = daySales.reduce((sum: number, s: any) => sum + s.totalAmount, 0);
+          const cst = daySales.reduce((sum: number, s: any) => sum + (s.totalCost || 0), 0);
           point[`rev_${br.id}`] = rev;
           point[`profit_${br.id}`] = rev - cst;
         });
@@ -128,19 +164,37 @@ const Dashboard: React.FC = () => {
       }
       return data;
     }
-  }, [salesHistory, filterMode, selectedDate, selectedMonth, branches]);
+  }, [dashSales.chart.data, filterMode, selectedDate, selectedMonth, branches]);
+
+  // --- Fetch expenses on demand when filter changes ---
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const branchId = currentBranch.id;
+        let dateFrom: string | undefined;
+        let dateTo: string | undefined;
+        if (filterMode === 'daily') {
+          dateFrom = selectedDate;
+          dateTo = selectedDate;
+        } else {
+          const [year, month] = selectedMonth.split('-').map(Number);
+          const daysInMonth = new Date(year, month, 0).getDate();
+          dateFrom = `${selectedMonth}-01`;
+          dateTo = `${selectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
+        }
+        const data = await fetchExpenses({ branchId, dateFrom, dateTo });
+        if (!cancelled) setLocalExpenses(data);
+      } catch (e) {
+        console.error('Failed to load expenses', e);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [filterMode, selectedDate, selectedMonth, currentBranch.id]);
 
   // --- Unified Ledger ---
-  const filteredExpenses = useMemo(() => {
-    const branchExpenses = expenses.filter(e => e.branchId === currentBranch.id);
-    if (filterMode === 'daily') return branchExpenses.filter(e => matchesDate(e.date, selectedDate));
-    return branchExpenses.filter(e => matchesMonth(e.date, selectedMonth));
-  }, [expenses, filterMode, selectedDate, selectedMonth, currentBranch.id]);
-
-  const filteredSupplierTx = useMemo(() => {
-    if (filterMode === 'daily') return supplierTransactions.filter(t => t.type === 'PAYMENT' && t.affectsAccounting === true && matchesDate(t.date, selectedDate));
-    return supplierTransactions.filter(t => t.type === 'PAYMENT' && t.affectsAccounting === true && matchesMonth(t.date, selectedMonth));
-  }, [supplierTransactions, filterMode, selectedDate, selectedMonth]);
+  const filteredExpenses = useMemo(() => localExpenses, [localExpenses]);
 
   const filteredTransfers = useMemo(() => {
     if (filterMode === 'daily') return stockTransfers.filter(t => matchesDate(t.date, selectedDate));
@@ -155,9 +209,6 @@ const Dashboard: React.FC = () => {
       ...filteredExpenses.map(e => ({
         id: e.id, date: e.date, desc: e.description, amount: e.amount, type: 'OUT' as const, category: e.category
       })),
-      ...filteredSupplierTx.map(t => ({
-        id: t.id, date: t.date, desc: `Supplier: ${t.supplierName}`, amount: t.amount, type: 'OUT' as const, category: 'Inventory'
-      })),
       ...filteredTransfers.map(t => ({
         id: t.id, date: t.date, desc: `Transfer ${t.transferNumber}: ${t.fromBranchName} → ${t.toBranchName}`, amount: t.totalValue, type: 'IN' as const, category: 'Stock Transfer'
       })),
@@ -170,18 +221,18 @@ const Dashboard: React.FC = () => {
       }))
     ];
     return all.sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime());
-  }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredTransfers, filteredExchanges]);
+  }, [filteredSales, filteredExpenses, filteredTransfers, filteredExchanges]);
 
   // --- Recent Sales (today, current branch — editable within 10 min) ---
   const TEN_MIN = 10 * 60 * 1000;
   const isSaleEditable = (sale: SalesRecord) => Date.now() - parseBusinessDate(sale.date).getTime() <= TEN_MIN;
   const recentEditableSales = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
-    return salesHistory
-      .filter(s => s.branchId === currentBranch.id && s.date.startsWith(todayStr))
-      .sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime())
+    return dashSales.recentWithItems.data
+      .filter((s: any) => s.date.startsWith(todayStr))
+      .sort((a: any, b: any) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime())
       .slice(0, 20);
-  }, [salesHistory, currentBranch.id]);
+  }, [dashSales.recentWithItems.data]);
 
   // --- Activity Feed ---
   const activityFeed = useMemo(() => {
@@ -189,8 +240,8 @@ const Dashboard: React.FC = () => {
     const items: ActivityItem[] = [];
 
     // Sales events
-    salesHistory.forEach(sale => {
-      const itemNames = sale.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
+    dashSales.recentWithItems.data.forEach((sale: any) => {
+      const itemNames = (sale.items || []).map((i: any) => `${i.quantity}x ${i.name}`).join(', ');
       items.push({
         id: `sale-${sale.id}`,
         date: sale.date,
@@ -202,7 +253,7 @@ const Dashboard: React.FC = () => {
     });
 
     // Stock movements
-    stockHistory.forEach(mv => {
+    recentMovements.forEach(mv => {
       if (mv.type === 'IN') {
         items.push({
           id: `stock-${mv.id}`,
@@ -239,7 +290,7 @@ const Dashboard: React.FC = () => {
     // Sort by date descending
     items.sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime());
     return items.slice(0, 20);
-  }, [salesHistory, stockHistory]);
+  }, [dashSales.recentWithItems.data, recentMovements]);
 
   const getActivityIcon = (type: string) => {
     switch (type) {
@@ -270,15 +321,22 @@ const Dashboard: React.FC = () => {
   };
 
   // --- Day End Report (PDF) ---
-  const generateDayEndReport = (cashierName: string, note: string) => {
+  const handleGenerateDayReport = async (cashierName: string, note: string) => {
+    if (!dashSales.dayReport.loaded) {
+      await dashSales.dayReport.load();
+    }
+    generateDayEndReport(cashierName, note, dashSales.dayReport.data);
+  };
+
+  const generateDayEndReport = (cashierName: string, note: string, salesData: any[]) => {
     // Payment method breakdown
-    const cashSales    = filteredSales.filter(s => s.paymentMethod === 'Cash');
-    const cardSales    = filteredSales.filter(s => s.paymentMethod === 'Card');
-    const codSales     = filteredSales.filter(s => s.paymentMethod === 'COD');
-    const splitSales   = filteredSales.filter(s => s.paymentMethod === 'Cash+Card');
-    const payhereS     = filteredSales.filter(s => s.paymentMethod === 'PayHere');
-    const onlineS      = filteredSales.filter(s => s.paymentMethod === 'Online Transfer');
-    const mintpayS     = filteredSales.filter(s => s.paymentMethod === 'MintPay');
+    const cashSales    = salesData.filter((s: any) => s.paymentMethod === 'Cash');
+    const cardSales    = salesData.filter((s: any) => s.paymentMethod === 'Card');
+    const codSales     = salesData.filter((s: any) => s.paymentMethod === 'COD');
+    const splitSales   = salesData.filter((s: any) => s.paymentMethod === 'Cash+Card');
+    const payhereS     = salesData.filter((s: any) => s.paymentMethod === 'PayHere');
+    const onlineS      = salesData.filter((s: any) => s.paymentMethod === 'Online Transfer');
+    const mintpayS     = salesData.filter((s: any) => s.paymentMethod === 'MintPay');
 
     const splitCashTotal = splitSales.reduce((s, x) => s + (x.cashAmount || 0), 0);
     const splitCardTotal = splitSales.reduce((s, x) => s + (x.cardAmount || 0), 0);
@@ -290,16 +348,15 @@ const Dashboard: React.FC = () => {
     const mintpayTotal = mintpayS.reduce((s, x) => s + x.totalAmount, 0);
     const allCardTotal = cardTotal + payhereTotal + onlineTotal + mintpayTotal;
 
-    const totalSalesRevenue  = filteredSales.reduce((s, x) => s + x.totalAmount, 0);
+    const totalSalesRevenue  = salesData.reduce((s: number, x: any) => s + x.totalAmount, 0);
     const exchangeNet         = filteredExchanges.reduce((s, e) => s + e.difference, 0);
     const grossSales          = totalSalesRevenue + exchangeNet;
-    const txCount             = filteredSales.length + filteredExchanges.length;
-    const totalItemsSold      = filteredSales.reduce((s, x) => s + x.items.reduce((a, i) => a + i.quantity, 0), 0);
+    const txCount             = salesData.length + filteredExchanges.length;
+    const totalItemsSold      = salesData.reduce((s: number, x: any) => s + (x.items ?? []).reduce((a: number, i: any) => a + i.quantity, 0), 0);
 
     // Expenses
     const totalOperatingExpenses = filteredExpenses.reduce((s, e) => s + e.amount, 0);
-    const totalSupplierPayments  = filteredSupplierTx.reduce((s, t) => s + t.amount, 0);
-    const totalExpenses          = totalOperatingExpenses + totalSupplierPayments;
+    const totalExpenses          = totalOperatingExpenses;
     const netSales               = grossSales - totalExpenses;
 
     const avgBill             = txCount > 0 ? grossSales / txCount : 0;
@@ -392,9 +449,6 @@ const Dashboard: React.FC = () => {
     const expenseRows: (string | number)[][] = [];
     filteredExpenses.forEach(e => {
       expenseRows.push([parseBusinessDate(e.date).toLocaleDateString(), e.category, e.description, fmtCurrency(e.amount)]);
-    });
-    filteredSupplierTx.forEach(t => {
-      expenseRows.push([parseBusinessDate(t.date).toLocaleDateString(), 'Supplier Payment', t.supplierName + (t.reference ? ` — ${t.reference}` : ''), fmtCurrency(t.amount)]);
     });
 
     let afterExpensesY: number;
@@ -829,7 +883,7 @@ const Dashboard: React.FC = () => {
                               <tr key={sale.id} className="hover:bg-slate-50">
                                 <td className="p-3 font-medium text-slate-900">#{sale.invoiceNumber}</td>
                                 <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{parseBusinessDate(sale.date).toLocaleDateString()}</td>
-                                <td className="p-3 text-slate-600 text-xs">{sale.items.length} items</td>
+                                <td className="p-3 text-slate-600 text-xs">{sale.items?.length ?? 0} items</td>
                                 <td className="p-3 text-right font-bold text-rose-600">-{fmtCurrency(sale.totalCost || 0)}</td>
                               </tr>
                             ))}
@@ -877,43 +931,7 @@ const Dashboard: React.FC = () => {
                     </div>
                   )}
                   
-                  {/* Supplier Payments */}
-                  {filteredSupplierTx.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="p-1.5 bg-rose-50 rounded-lg text-rose-600">
-                          <TrendingDown size={14} />
-                        </div>
-                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
-                          Supplier Payments ({filteredSupplierTx.length})
-                        </h4>
-                      </div>
-                      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-                        <table className="w-full text-left text-sm">
-                          <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
-                            <tr>
-                              <th className="p-3">Supplier</th>
-                              <th className="p-3">Date</th>
-                              <th className="p-3">Reference</th>
-                              <th className="p-3 text-right">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {filteredSupplierTx.map(tx => (
-                              <tr key={tx.id} className="hover:bg-slate-50">
-                                <td className="p-3 font-medium text-slate-900">{tx.supplierName}</td>
-                                <td className="p-3 text-slate-500 whitespace-nowrap text-xs">{parseBusinessDate(tx.date).toLocaleDateString()}</td>
-                                <td className="p-3 text-slate-600 text-xs">{tx.reference || 'Payment'}</td>
-                                <td className="p-3 text-right font-bold text-rose-600">-{fmtCurrency(tx.amount)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {filteredSales.length === 0 && filteredExpenses.length === 0 && filteredSupplierTx.length === 0 && (
+                  {filteredSales.length === 0 && filteredExpenses.length === 0 && (
                     <div className="p-12 text-center text-slate-400">
                       <CreditCard size={32} className="mx-auto mb-3 opacity-30" />
                       <p className="text-sm font-medium">No expenses in this period</p>
@@ -1156,7 +1174,7 @@ const Dashboard: React.FC = () => {
               </button>
               <button
                 onClick={() => {
-                  generateDayEndReport(dayEndCashier, dayEndNote);
+                  void handleGenerateDayReport(dayEndCashier, dayEndNote);
                   setShowDayEndModal(false);
                   setDayEndCashier('');
                   setDayEndNote('');
@@ -1217,7 +1235,14 @@ const Dashboard: React.FC = () => {
                 <p className="text-xs text-slate-400">Recent events across the store</p>
               </div>
             </div>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Live"></span>
+            <button
+              onClick={() => void loadRecentMovements()}
+              disabled={movementsRefreshing}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              title="Refresh activity"
+            >
+              <RefreshCw size={14} className={movementsRefreshing ? 'animate-spin' : ''} />
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto max-h-[400px]">
             {activityFeed.length > 0 ? (
