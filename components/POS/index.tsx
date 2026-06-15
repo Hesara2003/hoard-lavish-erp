@@ -707,6 +707,8 @@ const POS: React.FC = () => {
       cashierName: currentUser?.name || 'Admin',
       logoUrl,
       withPrintScript: !isElectron,
+      branchAddress: currentBranch.address,
+      branchPhone: currentBranch.phone,
     });
 
     if (isElectron) {
@@ -731,6 +733,8 @@ const POS: React.FC = () => {
       cashierName: currentUser?.name || 'Admin',
       logoUrl,
       withPrintScript: !isElectron,
+      branchAddress: currentBranch.address,
+      branchPhone: currentBranch.phone,
     });
 
     if (isElectron) {

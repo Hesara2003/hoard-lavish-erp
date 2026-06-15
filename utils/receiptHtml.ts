@@ -5,6 +5,8 @@ export interface ReceiptOptions {
   cashierName: string;
   logoUrl: string;
   withPrintScript?: boolean;
+  branchAddress?: string;
+  branchPhone?: string;
 }
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -64,11 +66,11 @@ table.totals .val { text-align:right; white-space:nowrap; }
 @media print { body { margin:0 auto; padding:0; } .wrap { padding:2mm 4mm 7mm 2mm; } @page { size:70mm auto; margin:0; } }
 `.trim();
 
-const STORE_HEADER = (logoUrl: string) => `
+const STORE_HEADER = (logoUrl: string, branchAddress?: string, branchPhone?: string) => `
 <div class="logo-wrap"><img src="${logoUrl}" alt="Hoard Lavish"/></div>
 <div class="store-info">
-  Veediya Bandara Rd, EthulKotte<br>
-  Tel : 074 177 4321<br>
+  ${branchAddress || 'Veediya Bandara Rd, EthulKotte'}<br>
+  Tel : ${branchPhone || '074 177 4321'}<br>
   Web : www.hoardlavish.com
 </div>`;
 
@@ -83,7 +85,7 @@ const EXCHANGE_POLICY = `
 // ── sale receipt ─────────────────────────────────────────────────────────────
 
 export function buildSaleReceiptHtml(sale: SalesRecord, opts: ReceiptOptions): string {
-  const { cashierName, logoUrl, withPrintScript = false } = opts;
+  const { cashierName, logoUrl, withPrintScript = false, branchAddress, branchPhone } = opts;
 
   const sd = parseBusinessDate(sale.date);
   const metaDate = `${String(sd.getDate()).padStart(2,'0')}/${String(sd.getMonth()+1).padStart(2,'0')}/${sd.getFullYear()} ${sd.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}`;
@@ -112,14 +114,14 @@ export function buildSaleReceiptHtml(sale: SalesRecord, opts: ReceiptOptions): s
 <style>${SHARED_CSS}</style>
 </head><body>
 <div class="wrap">
-${STORE_HEADER(logoUrl)}
+${STORE_HEADER(logoUrl, branchAddress, branchPhone)}
 
 <div class="divider-dot"></div>
 
 <div class="receipt-fields">
   <div><span>Date &amp; Time :</span> ${metaDate}</div>
   <div><span>Invoice No&nbsp;&nbsp;&nbsp;:</span> ${sale.invoiceNumber}</div>
-  ${sale.customerName ? `<div><span>Customer&nbsp;&nbsp;&nbsp;&nbsp;:</span> ${sale.customerName}</div>` : ''}
+  <div><span>Customer&nbsp;&nbsp;&nbsp;&nbsp;:</span> ${sale.customerName || 'Walk-in Customer'}</div>
   <div><span>Cashier&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:</span> ${cashierName}</div>
 </div>
 
@@ -185,7 +187,7 @@ ${withPrintScript ? '<script>window.onload=function(){window.print();};<\/script
 // ── exchange receipt ──────────────────────────────────────────────────────────
 
 export function buildExchangeReceiptHtml(exchange: ExchangeRecord, opts: ReceiptOptions): string {
-  const { cashierName, logoUrl, withPrintScript = false } = opts;
+  const { cashierName, logoUrl, withPrintScript = false, branchAddress, branchPhone } = opts;
 
   const sd = parseBusinessDate(exchange.date);
   const metaDate = `${String(sd.getDate()).padStart(2,'0')}/${String(sd.getMonth()+1).padStart(2,'0')}/${sd.getFullYear()} ${sd.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}`;
@@ -225,7 +227,7 @@ export function buildExchangeReceiptHtml(exchange: ExchangeRecord, opts: Receipt
 <style>${SHARED_CSS}</style>
 </head><body>
 <div class="wrap">
-${STORE_HEADER(logoUrl)}
+${STORE_HEADER(logoUrl, branchAddress, branchPhone)}
 
 <div class="divider-dot"></div>
 
@@ -233,7 +235,7 @@ ${STORE_HEADER(logoUrl)}
   <div><span>Date &amp; Time :</span> ${metaDate}</div>
   <div><span>Exch. No&nbsp;&nbsp;&nbsp;&nbsp;:</span> ${exchange.exchangeNumber}</div>
   <div><span>Orig. Invoice:</span> ${exchange.originalInvoiceNumber || 'N/A'}</div>
-  ${exchange.customerName ? `<div><span>Customer&nbsp;&nbsp;&nbsp;&nbsp;:</span> ${exchange.customerName}</div>` : ''}
+  <div><span>Customer&nbsp;&nbsp;&nbsp;&nbsp;:</span> ${exchange.customerName || 'Walk-in Customer'}</div>
   <div><span>Cashier&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:</span> ${cashierName}</div>
 </div>
 

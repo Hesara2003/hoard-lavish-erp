@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import * as db from '../../services/supabaseService';
 
 export type LoaderState<T> = {
@@ -64,13 +64,13 @@ export function useDashboardSales(params: {
 
   const getDateRange = useCallback(() => {
     if (filterMode === 'daily') {
-      return { dateFrom: selectedDate, dateTo: selectedDate };
+      return { dateFrom: selectedDate, dateTo: selectedDate + 'T23:59:59.999' };
     }
     const [year, month] = selectedMonth.split('-').map(Number);
     const lastDay = new Date(year, month, 0).getDate();
     return {
       dateFrom: `${selectedMonth}-01`,
-      dateTo: `${selectedMonth}-${String(lastDay).padStart(2, '0')}`,
+      dateTo: `${selectedMonth}-${String(lastDay).padStart(2, '0')}T23:59:59.999`,
     };
   }, [filterMode, selectedDate, selectedMonth]);
 
@@ -176,15 +176,18 @@ export function useDashboardSales(params: {
     setTopData([]);
     setDayReportLoaded(false);
     setDayReportData([]);
-    setRecentLoaded(false);
-    setRecentData([]);
-    // Clear caches for the new key
+    // Clear period-sensitive caches only; recentWithItems is always "today" and not date-filter sensitive
     periodCacheRef.current.clear();
     chartCacheRef.current.clear();
     topCacheRef.current.clear();
     dayReportCacheRef.current.clear();
-    recentCacheRef.current = null;
   }, []);
+
+  // Auto-load each loader on mount and whenever its fetch params change
+  useEffect(() => { void loadPeriodSales(); }, [loadPeriodSales]);
+  useEffect(() => { void loadChart(); }, [loadChart]);
+  useEffect(() => { void loadTopPerformers(); }, [loadTopPerformers]);
+  useEffect(() => { void loadRecentWithItems(); }, [loadRecentWithItems]);
 
   return {
     periodSales: { data: periodSalesData, loading: periodSalesLoading, loaded: periodSalesLoaded, load: loadPeriodSales },

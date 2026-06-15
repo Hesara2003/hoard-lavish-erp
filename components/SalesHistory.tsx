@@ -348,12 +348,22 @@ const SalesHistory: React.FC = () => {
     if (!selectedItem) return;
     const logoUrl = window.location.origin + '/logo.png';
     const cashierName = currentUser?.name || 'Admin';
+    const recordBranchId = (selectedItem.data as SalesRecord | ExchangeRecord).branchId;
+    const branch = branches.find(b => b.id === recordBranchId);
 
     let html: string;
     if (selectedItem.recordType === 'exchange') {
-      html = buildExchangeReceiptHtml(selectedItem.data as ExchangeRecord, { cashierName, logoUrl, withPrintScript: true });
+      html = buildExchangeReceiptHtml(selectedItem.data as ExchangeRecord, {
+        cashierName, logoUrl, withPrintScript: true,
+        branchAddress: branch?.address,
+        branchPhone: branch?.phone,
+      });
     } else {
-      html = buildSaleReceiptHtml(selectedItem.data as SalesRecord, { cashierName, logoUrl, withPrintScript: true });
+      html = buildSaleReceiptHtml(selectedItem.data as SalesRecord, {
+        cashierName, logoUrl, withPrintScript: true,
+        branchAddress: branch?.address,
+        branchPhone: branch?.phone,
+      });
     }
     openReceiptWindow(html);
   };
