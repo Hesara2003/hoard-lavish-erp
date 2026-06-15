@@ -7,6 +7,17 @@ import { calculateCartTotals } from '../utils/cart';
 import { generateInvoiceNumber, generateTransferNumber } from '../utils/generators';
 import { isLikelyConnectivityIssue, extractDbErrorMessage, DbLikeError } from '../utils/errors';
 import { isUuid, makeUuid } from '../utils/ids';
+import { loadLocalBranches, saveLocalBranches } from '../services/localBranches';
+import { loadCachedProducts, saveCachedProducts, applyStockDelta, mergeBranchStock } from '../services/localProducts';
+import * as localCustomers from '../services/localCustomers';
+import { loadLocalSuppliers, saveLocalSuppliers } from '../services/localSuppliers';
+import { loadLocalSettings, saveLocalSettings, setLocalSettings } from '../services/localSettings';
+import { loadLocalUsers, saveLocalUsers, setLocalUsers } from '../services/localUsers';
+
+const getTodayDate = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 interface StoreContextType {
   products: Product[];
@@ -46,6 +57,8 @@ interface StoreContextType {
   addCustomer: (customer: Customer) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
   deleteCustomer: (id: string) => void;
+  loadCustomers: () => Promise<void>;
+  refreshCustomers: () => Promise<void>;
 
   addToCart: (product: Product) => string;
   removeFromCart: (productId: string) => void;
@@ -61,8 +74,9 @@ interface StoreContextType {
   ) => SalesRecord;
   updateSale: (saleId: string, updatedItems: CartItem[], discount: number, customerId?: string) => SalesRecord;
   deleteSale: (saleId: string) => void;
+  refreshSalesHistory: (options?: import('../services/db/sales').FetchSalesOptions) => Promise<void>;
   completeExchange: (exchange: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>) => ExchangeRecord;
-  adjustStock: (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => void;
+  adjustStock: (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => StockMovement | null;
   transferStock: (toBranchId: string, items: StockTransferItem[], notes: string) => StockTransfer;
   deleteTransfer: (transferId: string) => void;
   refreshTransfers: () => Promise<void>;
@@ -72,6 +86,7 @@ interface StoreContextType {
   addBrand: (brand: string) => void;
   removeBrand: (brand: string) => void;
 
+  refreshSuppliers: () => Promise<void>;
   addSupplier: (supplier: Supplier) => void;
   updateSupplier: (id: string, updates: Partial<Supplier>) => void;
   deleteSupplier: (id: string) => void;
@@ -89,8 +104,10 @@ interface StoreContextType {
   addUser: (user: User) => void;
   updateUser: (id: string, updates: Partial<User>) => void;
   deleteUser: (id: string) => void;
+  refreshUsers: () => Promise<void>;
 
   updateSettings: (settings: Partial<AppSettings>) => void;
+  refreshSettings: () => Promise<void>;
 
   exportData: () => string;
   importData: (jsonData: string) => boolean;
@@ -122,8 +139,9 @@ const isSupabaseConfigured = (): boolean => {
 const OFFLINE_QUEUE_STORAGE_KEY = 'hoard_offline_queue_v1';
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [branches, setBranches] = useState<Branch[]>(INITIAL_BRANCHES);
-  const [currentBranch, setCurrentBranch] = useState<Branch>(INITIAL_BRANCHES[0]);
+  const _localBranches = loadLocalBranches();
+  const [branches, setBranches] = useState<Branch[]>(_localBranches);
+  const [currentBranch, setCurrentBranch] = useState<Branch>(_localBranches[0]);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -134,18 +152,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [exchangeHistory, setExchangeHistory] = useState<ExchangeRecord[]>([]);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [brands, setBrands] = useState<string[]>(INITIAL_BRANDS);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => loadLocalSuppliers());
   const [supplierTransactions, setSupplierTransactions] = useState<SupplierTransaction[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [damagedGoods, setDamagedGoods] = useState<DamagedGood[]>([]);
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
+  const [users, setUsers] = useState<User[]>(loadLocalUsers());
+  const [settings, setSettings] = useState<AppSettings>(loadLocalSettings());
 
   const [currentView, setCurrentView] = useState<ViewState>('DASHBOARD');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const customerLoadedRef = useRef(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTING' | 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR' | null>(null);
@@ -290,6 +309,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           await db.insertStockMovement(movement);
         }
         await db.insertStockTransfer(p.transfer as StockTransfer);
+        return;
+      }
+      case 'DELETE_TRANSFER': {
+        const stockRows = p.stockRows as Array<{ productId: string; branchId: string; quantity: number }>;
+        for (const row of stockRows) {
+          await db.upsertBranchStock(row.productId, row.branchId, row.quantity);
+        }
         return;
       }
       case 'ADD_CATEGORY':
@@ -468,37 +494,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const loadAll = async () => {
       setIsLoading(true);
       try {
+        // Products: serve from daily cache if available, otherwise full fetch
+        const today = getTodayDate();
+        const cached = loadCachedProducts();
+        const catalogPromise = (cached && cached.cachedDate === today)
+          ? Promise.resolve(cached.products)
+          : db.fetchProductsWithStock();
+
         const [
-          branchesData,
-          productsData,
-          customersData,
-          salesData,
-          stockData,
-          suppliersData,
-          supplierTxnData,
-          expensesData,
-          usersData,
-          settingsData,
+          catalogData,
+          freshStockRows,
           categoriesData,
           brandsData,
           damagedGoodsData,
           exchangesData,
         ] = await Promise.all([
-          db.fetchBranches(),
-          db.fetchProductsWithStock(),
-          db.fetchCustomers(),
-          db.fetchSales(),
-          db.fetchStockMovements(),
-          db.fetchSuppliers(),
-          db.fetchSupplierTransactions(),
-          db.fetchExpenses(),
-          db.fetchUsers(),
-          db.fetchSettings(),
+          catalogPromise,
+          db.fetchBranchStock(),  // always reconcile quantities on mount
+          // sales excluded — lazy fetched per-page via scoped fetchSales()
+          // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
+          // supplier_transactions excluded — lazy fetched on the Suppliers page
+          // suppliers / expenses / users / settings excluded — local-first or lazy
           db.fetchCategories(),
           db.fetchBrands(),
           db.fetchDamagedGoods(),
           db.fetchExchanges().catch(() => []),
         ]);
+
+        // Merge fresh qty into catalog and persist
+        const productsData = mergeBranchStock(catalogData, freshStockRows);
+        saveCachedProducts(productsData, today);
 
         // Load stock transfers separately (table may not exist yet)
         let stockTransfersData: StockTransfer[] = [];
@@ -527,22 +552,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch (_) { /* ignore parse errors */ }
         }
 
-        setBranches(branchesData);
         setProducts(productsData);
-        setCustomers(customersData);
-        setSalesHistory(salesData);
-        setStockHistory(stockData);
-        setSuppliers(suppliersData);
-        setSupplierTransactions(supplierTxnData);
-        setExpenses(expensesData);
-        setUsers(usersData);
-        setSettings(settingsData);
         setCategories(categoriesData);
         setBrands(brandsData);
         setDamagedGoods(damagedGoodsData);
         setStockTransfers(stockTransfersData);
         setExchangeHistory(exchangeData);
-        if (branchesData.length > 0) setCurrentBranch(branchesData[0]);
+
         setIsCloudConnected(true);
         setLastSyncTime(new Date());
       } catch (err: unknown) {
@@ -565,25 +581,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!useSupabase) return { success: false, error: 'Cloud database not configured. Using local storage only.' };
     try {
       const [
-        productsData,
-        customersData,
-        salesData,
-        stockData,
-        suppliersData,
-        supplierTxnData,
-        expensesData,
         categoriesData,
         brandsData,
         damagedGoodsData,
         exchangesData,
       ] = await Promise.all([
-        db.fetchProductsWithStock(),
-        db.fetchCustomers(),
-        db.fetchSales(),
-        db.fetchStockMovements(),
-        db.fetchSuppliers(),
-        db.fetchSupplierTransactions(),
-        db.fetchExpenses(),
+        // sales excluded — lazy fetched per-page via scoped fetchSales()
+        // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
+        // supplier_transactions excluded — lazy fetched on the Suppliers page
         db.fetchCategories(),
         db.fetchBrands(),
         db.fetchDamagedGoods(),
@@ -595,13 +600,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stockTransfersData = await db.fetchStockTransfers();
       } catch (_) { /* table may not exist */ }
 
-      setProducts(productsData);
-      setCustomers(customersData);
-      setSalesHistory(salesData);
-      setStockHistory(stockData);
-      setSuppliers(suppliersData);
-      setSupplierTransactions(supplierTxnData);
-      setExpenses(expensesData);
       setCategories(categoriesData);
       setBrands(brandsData);
       setDamagedGoods(damagedGoodsData);
@@ -609,7 +607,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setStockTransfers(stockTransfersData);
       setLastSyncTime(new Date());
       setIsCloudConnected(true);
-      return { success: true, productCount: productsData.length };
+      return { success: true };
     } catch (err: unknown) {
       console.error('Failed to refresh data from Supabase', err);
       const errorMsg = extractDbErrorMessage(err, 'Failed to sync with cloud database', 'general');
@@ -618,6 +616,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return { success: false, error: errorMsg };
     }
   }, [useSupabase]);
+
+  // When the browser reports the network has returned, re-connect to Supabase so
+  // isCloudConnected flips to true and the auto-sync useEffect can fire.
+  useEffect(() => {
+    if (!useSupabase) return;
+    const handleOnline = () => { void refreshFromSupabase(); };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [useSupabase, refreshFromSupabase]);
 
   // Debounced refresh to avoid flooding on rapid changes
   const debouncedRefresh = useCallback(() => {
@@ -643,30 +650,77 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (channelRef) supabase.removeChannel(channelRef);
 
       const onEvent = () => debouncedRefreshRef.current();
+
+      // Qty-delta handler: patch only the changed product_branch_stock row
+      const onBranchStockEvent = (payload: any) => {
+        const { eventType } = payload;
+        const row = eventType === 'DELETE' ? (payload.old ?? {}) : (payload.new ?? {});
+        const { product_id, branch_id, quantity } = row;
+        if (!product_id || !branch_id) return;
+        const qty = eventType === 'DELETE' ? 0 : Number(quantity);
+        setProducts(prev => {
+          const updated = applyStockDelta(prev, product_id, branch_id, qty);
+          saveCachedProducts(updated, getTodayDate());
+          return updated;
+        });
+      };
+
+      // Catalog patch handler: update/insert/delete a single product row
+      const onProductsEvent = (payload: any) => {
+        const { eventType } = payload;
+        if (eventType === 'DELETE') {
+          const id = payload.old?.id;
+          if (id) {
+            setProducts(prev => {
+              const updated = prev.filter(p => p.id !== id);
+              saveCachedProducts(updated, getTodayDate());
+              return updated;
+            });
+          }
+          return;
+        }
+        const row = payload.new;
+        if (!row?.id) return;
+        setProducts(prev => {
+          const existing = prev.find(p => p.id === row.id);
+          const branchStock = existing?.branchStock ?? {};
+          const patched = db.mapProduct(row, branchStock);
+          const updated = existing
+            ? prev.map(p => p.id === row.id ? patched : p)
+            : [...prev, patched];
+          saveCachedProducts(updated, getTodayDate());
+          return updated;
+        });
+      };
+
       const channel = supabase
         .channel(`db-sync-${Date.now()}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'product_branch_stock' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, onEvent)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, onProductsEvent)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'product_branch_stock' }, onBranchStockEvent)
+        // sales + sale_items excluded — lazy fetched per-page via scoped fetchSales()
         .on('postgres_changes', { event: '*', schema: 'public', table: 'exchanges' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_items' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, onEvent)
+        // stock_movements excluded — lazy fetched per-component via fetchStockMovements()
         .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_transfers' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, onEvent)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'supplier_transactions' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, onEvent)
+        // suppliers table excluded — lazy fetched on page open via refreshSuppliers()
+        // supplier_transactions excluded — lazy fetched on the Suppliers page
         .on('postgres_changes', { event: '*', schema: 'public', table: 'damaged_goods' }, onEvent)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, onEvent)
         .subscribe((status) => {
           console.log('Realtime subscription status:', status);
           if (unmounted) return;
           setRealtimeStatus(status as 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR');
           if (status === 'SUBSCRIBED') {
             retryCount = 0;
+            // Reconcile quantities missed while disconnected
+            db.fetchBranchStock().then(rows => {
+              setProducts(prev => {
+                const updated = mergeBranchStock(prev, rows);
+                saveCachedProducts(updated, getTodayDate());
+                return updated;
+              });
+            }).catch(err => console.error('Stock reconcile failed on reconnect', err));
           }
           if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
             retryCount++;
@@ -731,57 +785,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addBranch = (branchInput: Omit<Branch, 'id'> & { id?: string }) => {
-    if (!useSupabase) {
-      const localBranch: Branch = {
-        ...branchInput,
-        id: isUuid(branchInput.id || '') ? (branchInput.id as string) : makeUuid(),
-      };
-      setBranches(prev => [...prev, localBranch]);
-      setProducts(prev => prev.map(p => ({
-        ...p,
-        branchStock: { ...p.branchStock, [localBranch.id]: 0 }
-      })));
-      return;
-    }
-
-    void (async () => {
-      const localBranch: Branch = {
-        ...branchInput,
-        id: isUuid(branchInput.id || '') ? (branchInput.id as string) : makeUuid(),
-      };
-      const branchForSave: Omit<Branch, 'id'> & { id?: string } = { ...branchInput, id: localBranch.id };
-      setBranches(prev => [...prev, localBranch]);
-      setProducts(prev => prev.map(p => ({
-        ...p,
-        branchStock: { ...p.branchStock, [localBranch.id]: 0 }
-      })));
-
-      const ok = await executeWithOfflineQueue(
-        'ADD_BRANCH',
-        { branch: branchForSave, branchId: localBranch.id, productIds: products.map(p => p.id) },
-        async () => {
-          const savedBranch = await db.insertBranch(branchForSave);
-          setBranches(prev => prev.map(b => b.id === localBranch.id ? savedBranch : b));
-          await db.initializeBranchStock(savedBranch.id, products.map(p => p.id));
-        },
-        { fallback: 'Failed to add branch' }
-      );
-
-      if (!ok) return;
-    })();
+    const localBranch: Branch = {
+      ...branchInput,
+      id: isUuid(branchInput.id || '') ? (branchInput.id as string) : makeUuid(),
+    };
+    setBranches(prev => {
+      const updated = [...prev, localBranch];
+      saveLocalBranches(updated);
+      return updated;
+    });
+    setProducts(prev => prev.map(p => ({
+      ...p,
+      branchStock: { ...p.branchStock, [localBranch.id]: 0 }
+    })));
   };
 
   const updateBranch = (id: string, updates: Partial<Branch>) => {
-    setBranches(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+    setBranches(prev => {
+      const updated = prev.map(b => b.id === id ? { ...b, ...updates } : b);
+      saveLocalBranches(updated);
+      return updated;
+    });
     if (currentBranch.id === id) {
       setCurrentBranch(prev => ({ ...prev, ...updates }));
     }
-    void executeWithOfflineQueue(
-      'UPDATE_BRANCH',
-      { id, updates },
-      () => db.updateBranch(id, updates),
-      { fallback: 'Failed to update branch' }
-    );
   };
 
   // ============================================================
@@ -900,12 +927,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const tempId = isUuid(customer.id) ? customer.id : makeUuid();
     const normalizedCustomer = { ...customer, id: tempId };
     setCustomers(prev => [...prev, normalizedCustomer]);
+    localCustomers.upsertCachedCustomer(normalizedCustomer);
     void executeWithOfflineQueue(
       'ADD_CUSTOMER',
       { customer: normalizedCustomer },
       async () => {
         const savedCustomer = await db.insertCustomer(normalizedCustomer);
         setCustomers(prev => prev.map(c => c.id === tempId ? savedCustomer : c));
+        localCustomers.upsertCachedCustomer(savedCustomer);
       },
       { fallback: 'Failed to add customer' }
     );
@@ -913,6 +942,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateCustomer = (id: string, updates: Partial<Customer>) => {
     setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    const updated = { ...customers.find(c => c.id === id)!, ...updates };
+    localCustomers.upsertCachedCustomer(updated);
     void executeWithOfflineQueue(
       'UPDATE_CUSTOMER',
       { id, updates },
@@ -923,12 +954,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteCustomer = (id: string) => {
     setCustomers(prev => prev.filter(c => c.id !== id));
+    localCustomers.removeCachedCustomer(id);
     void executeWithOfflineQueue(
       'DELETE_CUSTOMER',
       { id },
       () => db.deleteCustomer(id),
       { fallback: 'Failed to delete customer' }
     );
+  };
+
+  const loadCustomers = async () => {
+    if (customerLoadedRef.current && localCustomers.isCacheFresh()) return;
+    if (localCustomers.isCacheFresh()) {
+      setCustomers(localCustomers.loadCachedCustomers());
+      customerLoadedRef.current = true;
+      return;
+    }
+    const data = await db.fetchCustomers();
+    setCustomers(data);
+    localCustomers.saveCachedCustomers(data, new Date().toISOString().slice(0, 10));
+    customerLoadedRef.current = true;
+  };
+
+  const refreshCustomers = async () => {
+    const data = await db.fetchCustomers();
+    setCustomers(data);
+    localCustomers.saveCachedCustomers(data, new Date().toISOString().slice(0, 10));
+    customerLoadedRef.current = true;
   };
 
   // ============================================================
@@ -983,6 +1035,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const clearCart = () => setCart([]);
+
+  // ============================================================
+  // SALES HISTORY — lazy load on demand by components
+  // ============================================================
+  const refreshSalesHistory = useCallback(async (options?: import('../services/db/sales').FetchSalesOptions): Promise<void> => {
+    if (!useSupabase) return;
+    try {
+      const data = await db.fetchSales(options ?? { limit: 200 });
+      setSalesHistory(data);
+    } catch (err) {
+      console.error('Failed to refresh sales history', err);
+    }
+  }, [useSupabase]);
 
   // ============================================================
   // SALE COMPLETION
@@ -1439,9 +1504,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   // STOCK ADJUSTMENT
   // ============================================================
-  const adjustStock = (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => {
+  const adjustStock = (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string): StockMovement | null => {
     const product = products.find(p => p.id === productId);
-    if (!product) return;
+    if (!product) return null;
 
     const currentBranchStock = product.branchStock[currentBranch.id] || 0;
     let newBranchStock = currentBranchStock;
@@ -1488,6 +1553,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       { fallback: 'Failed to adjust stock' }
     );
+
+    return movement;
   };
 
   // ============================================================
@@ -1641,21 +1708,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Persist deletion to Supabase
     if (useSupabase) {
-      void executeWithOfflineQueue('DELETE_TRANSFER', { transferId, transferNumber: transfer.transferNumber }, async () => {
-        // Update branch stock for all items
-        for (const item of transfer.items) {
-          const product = newProducts.find(p => p.id === item.productId);
-          if (!product) continue;
-          await db.upsertBranchStock(item.productId, transfer.fromBranchId, product.branchStock[transfer.fromBranchId] || 0);
-          await db.upsertBranchStock(item.productId, transfer.toBranchId, product.branchStock[transfer.toBranchId] || 0);
-        }
-        // Delete stock movements related to this transfer
-        for (const movement of stockHistory) {
-          if (movement.reason?.includes(transfer.transferNumber)) {
-            // Note: There's no deleteStockMovement function, so we'll just log it
-            // In a production system, you'd want to soft-delete or have a removal mechanism
-            console.log('Stock movement to be removed:', movement.id);
-          }
+      const stockRows = transfer.items.flatMap(item => {
+        const product = newProducts.find(p => p.id === item.productId);
+        if (!product) return [];
+        return [
+          { productId: item.productId, branchId: transfer.fromBranchId, quantity: product.branchStock[transfer.fromBranchId] || 0 },
+          { productId: item.productId, branchId: transfer.toBranchId, quantity: product.branchStock[transfer.toBranchId] || 0 },
+        ];
+      });
+
+      void executeWithOfflineQueue('DELETE_TRANSFER', { transferId, transferNumber: transfer.transferNumber, stockRows }, async () => {
+        for (const row of stockRows) {
+          await db.upsertBranchStock(row.productId, row.branchId, row.quantity);
         }
       }, { fallback: `Failed to delete transfer ${transfer.transferNumber}` });
     }
@@ -1684,18 +1748,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   // SUPPLIER ACTIONS
   // ============================================================
+  const refreshSuppliers = useCallback(async () => {
+    if (!useSupabase) return;
+    try {
+      const data = await db.fetchSuppliers();
+      setSuppliers(data);
+      saveLocalSuppliers(data);
+    } catch (err) {
+      console.error('Failed to refresh suppliers', err);
+    }
+  }, [useSupabase]);
+
   const addSupplier = (supplier: Supplier) => {
-    setSuppliers(prev => [...prev, supplier]);
+    setSuppliers(prev => { const next = [...prev, supplier]; saveLocalSuppliers(next); return next; });
     void executeWithOfflineQueue('ADD_SUPPLIER', { supplier }, () => db.insertSupplier(supplier), { fallback: 'Failed to add supplier' });
   };
 
   const updateSupplier = (id: string, updates: Partial<Supplier>) => {
-    setSuppliers(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    setSuppliers(prev => { const next = prev.map(s => s.id === id ? { ...s, ...updates } : s); saveLocalSuppliers(next); return next; });
     void executeWithOfflineQueue('UPDATE_SUPPLIER', { id, updates }, () => db.updateSupplier(id, updates), { fallback: 'Failed to update supplier' });
   };
 
   const deleteSupplier = (id: string) => {
-    setSuppliers(prev => prev.filter(s => s.id !== id));
+    setSuppliers(prev => { const next = prev.filter(s => s.id !== id); saveLocalSuppliers(next); return next; });
     void executeWithOfflineQueue('DELETE_SUPPLIER', { id }, () => db.deleteSupplier(id), { fallback: 'Failed to delete supplier' });
   };
 
@@ -1952,16 +2027,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // USER ACTIONS
   // ============================================================
   const addUser = (user: User) => {
-    setUsers(prev => [...prev, user]);
+    setUsers(prev => {
+      const next = [...prev, user];
+      saveLocalUsers(next);
+      return next;
+    });
     void executeWithOfflineQueue('ADD_USER', { user }, () => db.insertUser(user), { fallback: 'Failed to add user' });
   };
   const updateUser = (id: string, updates: Partial<User>) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
+    setUsers(prev => {
+      const next = prev.map(u => u.id === id ? { ...u, ...updates } : u);
+      saveLocalUsers(next);
+      return next;
+    });
     void executeWithOfflineQueue('UPDATE_USER', { id, updates }, () => db.updateUser(id, updates), { fallback: 'Failed to update user' });
   };
   const deleteUser = (id: string) => {
-    setUsers(prev => prev.filter(u => u.id !== id));
+    setUsers(prev => {
+      const next = prev.filter(u => u.id !== id);
+      saveLocalUsers(next);
+      return next;
+    });
     void executeWithOfflineQueue('DELETE_USER', { id }, () => db.deleteUser(id), { fallback: 'Failed to delete user' });
+  };
+
+  const refreshUsers = async () => {
+    if (!useSupabase) return;
+    try {
+      const fresh = await db.fetchUsers();
+      setUsers(fresh);
+      setLocalUsers(fresh);
+    } catch (err: unknown) {
+      console.error('Failed to refresh users:', err);
+    }
   };
 
   // ============================================================
@@ -1969,7 +2067,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   const updateSettings = (updates: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...updates }));
+    saveLocalSettings(updates);
     void executeWithOfflineQueue('UPDATE_SETTINGS', { updates }, () => db.updateSettings(updates), { fallback: 'Failed to update settings' });
+  };
+
+  const refreshSettings = async () => {
+    if (!useSupabase) return;
+    try {
+      const fresh = await db.fetchSettings();
+      setSettings(fresh);
+      setLocalSettings(fresh);
+    } catch (err: unknown) {
+      console.error('Failed to refresh settings:', err);
+    }
   };
 
   // ============================================================
@@ -2121,15 +2231,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       currentBranch, currentUser, currentView, isLoading, dbError, offlineQueue, offlinePopup, lastSyncTime, isCloudConnected, realtimeStatus,
       setBranch, addBranch, updateBranch,
       addProduct, updateProduct, deleteProduct, getProductSalesUsage,
-      addCustomer, updateCustomer, deleteCustomer,
+      addCustomer, updateCustomer, deleteCustomer, loadCustomers, refreshCustomers,
       addToCart, removeFromCart, updateCartItemDiscount, updateCartQuantity, clearCart,
-      completeSale, updateSale, deleteSale, completeExchange, adjustStock, transferStock, deleteTransfer, refreshTransfers,
+      completeSale, updateSale, deleteSale, refreshSalesHistory, completeExchange, adjustStock, transferStock, deleteTransfer, refreshTransfers,
       addCategory, removeCategory, addBrand, removeBrand,
-      addSupplier, updateSupplier, deleteSupplier, recordSupplierExpense, addSupplierTransaction, updateSupplierTransaction, deleteSupplierTransaction,
+      refreshSuppliers, addSupplier, updateSupplier, deleteSupplier, recordSupplierExpense, addSupplierTransaction, updateSupplierTransaction, deleteSupplierTransaction,
       addExpense, deleteExpense,
       addDamagedGood, deleteDamagedGood,
-      addUser, updateUser, deleteUser,
-      updateSettings, exportData, importData,
+      addUser, updateUser, deleteUser, refreshUsers,
+      updateSettings, refreshSettings, exportData, importData,
       syncData, syncOfflineQueue, retryOfflineItem, removeOfflineItem, dismissOfflinePopup, dismissDbError,
       login, logout, setView
     }}>

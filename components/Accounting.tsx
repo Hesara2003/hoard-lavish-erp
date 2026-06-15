@@ -1,18 +1,48 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, PieChart, Pie, Cell } from 'recharts';
 import { DollarSign, TrendingUp, TrendingDown, Plus, Filter, Trash2, Calendar, FileText, Building2, ArrowRightLeft } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { fetchSales } from '../services/supabaseService';
 import { EXPENSE_CATEGORIES } from '../constants';
-import { Expense } from '../types';
+import { Expense, SalesRecord } from '../types';
 import { parseBusinessDate } from '../utils/dateTime';
 import ConfirmDialog from './shared/ConfirmDialog';
+import { fetchExpenses } from '../services/db/expenses';
 
 const Accounting: React.FC = () => {
-  const { salesHistory, expenses, supplierTransactions, stockTransfers, exchangeHistory, currentBranch, branches, addExpense, deleteExpense } = useStore();
+  const { stockTransfers, exchangeHistory, currentBranch, branches, addExpense, deleteExpense } = useStore();
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'EXPENSES'>('DASHBOARD');
   const [filterPeriod, setFilterPeriod] = useState<'ALL' | 'MONTH'>('ALL');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
+  const [localExpenses, setLocalExpenses] = useState<Expense[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
   
+  // Fetch expenses on demand when period/branch filter changes
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setExpensesLoading(true);
+      try {
+        const now = new Date();
+        const dateFrom = filterPeriod === 'MONTH'
+          ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+          : undefined;
+        const dateTo = filterPeriod === 'MONTH'
+          ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`
+          : undefined;
+        const branchId = branchFilter !== 'ALL' ? branchFilter : undefined;
+        const data = await fetchExpenses({ branchId, dateFrom, dateTo });
+        if (!cancelled) setLocalExpenses(data);
+      } catch (e) {
+        console.error('Failed to load expenses', e);
+      } finally {
+        if (!cancelled) setExpensesLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [filterPeriod, branchFilter]);
+
   // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; desc: string } | null>(null);
 
@@ -25,6 +55,25 @@ const Accounting: React.FC = () => {
     paymentMethod: 'Cash'
   });
 
+  // --- Sales — lazy loaded, scoped to active period ---
+  const [filteredSales, setFilteredSales] = useState<SalesRecord[]>([]);
+
+  useEffect(() => {
+    const now = new Date();
+    let dateFrom: string | undefined;
+    let dateTo: string | undefined;
+    if (filterPeriod === 'MONTH') {
+      dateFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    } else {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 90);
+      dateFrom = d.toISOString().split('T')[0];
+    }
+    fetchSales({ dateFrom, dateTo, limit: 1000 })
+      .then(setFilteredSales)
+      .catch(err => console.error('Failed to load accounting sales', err));
+  }, [filterPeriod]);
+
   // --- Calculations ---
 
   const isInPeriod = (dateStr: string) => {
@@ -35,7 +84,6 @@ const Accounting: React.FC = () => {
   };
 
   // 1. Income (Sales)
-  const filteredSales = salesHistory.filter(s => isInPeriod(s.date));
   const totalIncome = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
 
   // 1b. Exchange income/refunds
@@ -43,20 +91,12 @@ const Accounting: React.FC = () => {
   const exchangeIncome = filteredExchanges.filter(e => e.difference > 0).reduce((sum, e) => sum + e.difference, 0);
   const exchangeRefunds = filteredExchanges.filter(e => e.difference < 0).reduce((sum, e) => sum + Math.abs(e.difference), 0);
 
-  // 2. Expenses (Operating Expenses) — filtered by period AND branch
-  const filteredExpenses = expenses.filter(e => {
-    if (!isInPeriod(e.date)) return false;
-    if (branchFilter !== 'ALL' && e.branchId !== branchFilter) return false;
-    return true;
-  });
+  // 2. Expenses (Operating Expenses) — scoped by server-side fetch (period + branch)
+  const filteredExpenses = localExpenses;
   const totalOperatingExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-  // 3. COGS / Inventory Costs (Supplier Payments)
-  const filteredSupplierTx = supplierTransactions.filter(t => t.type === 'PAYMENT' && isInPeriod(t.date) && t.affectsAccounting === true);
-  const totalSupplierPayments = filteredSupplierTx.reduce((sum, t) => sum + t.amount, 0);
-
   // Totals
-  const totalExpenses = totalOperatingExpenses + totalSupplierPayments + exchangeRefunds;
+  const totalExpenses = totalOperatingExpenses + exchangeRefunds;
   const grossIncome = totalIncome + exchangeIncome;
   const netProfit = grossIncome - totalExpenses;
 
@@ -75,14 +115,13 @@ const Accounting: React.FC = () => {
 
     filteredSales.forEach(s => addToMap(s.date, 'income', s.totalAmount));
     filteredExpenses.forEach(e => addToMap(e.date, 'expense', e.amount));
-    filteredSupplierTx.forEach(t => addToMap(t.date, 'expense', t.amount));
     filteredExchanges.forEach(e => {
       if (e.difference > 0) addToMap(e.date, 'income', e.difference);
       else if (e.difference < 0) addToMap(e.date, 'expense', Math.abs(e.difference));
     });
 
     return Array.from(dataMap.values()).sort((a, b) => parseBusinessDate(a.date).getTime() - parseBusinessDate(b.date).getTime());
-  }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredExchanges]);
+  }, [filteredSales, filteredExpenses, filteredExchanges]);
 
   // Pie Chart Data: Expense Breakdown
   const expenseBreakdown = useMemo(() => {
@@ -91,17 +130,13 @@ const Accounting: React.FC = () => {
     filteredExpenses.forEach(e => {
       map.set(e.category, (map.get(e.category) || 0) + e.amount);
     });
-    // Supplier
-    if (totalSupplierPayments > 0) {
-      map.set('Inventory/Stock', totalSupplierPayments);
-    }
     // Exchange Refunds
     if (exchangeRefunds > 0) {
       map.set('Exchange Refunds', exchangeRefunds);
     }
-    
+
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [filteredExpenses, totalSupplierPayments, exchangeRefunds]);
+  }, [filteredExpenses, exchangeRefunds]);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
 
@@ -109,13 +144,15 @@ const Accounting: React.FC = () => {
   const handleSaveExpense = () => {
     if (newExpense.amount && newExpense.description) {
       const branch = branches.find(b => b.id === newExpense.branchId);
-      addExpense({
+      const expense: Expense = {
         ...newExpense,
         id: Math.random().toString(36).substr(2, 9),
         amount: Number(newExpense.amount),
         branchName: branch?.name || 'Unknown',
         date: new Date(newExpense.date!).toISOString()
-      } as Expense);
+      } as Expense;
+      addExpense(expense);
+      setLocalExpenses(prev => [expense, ...prev]);
       setIsModalOpen(false);
       setNewExpense({
         date: new Date().toISOString().split('T')[0],
@@ -134,18 +171,15 @@ const Accounting: React.FC = () => {
       ...filteredSales.map(s => ({ 
         id: s.id, date: s.date, desc: `Sale #${s.invoiceNumber}`, amount: s.totalAmount, type: 'IN' as const, category: 'Sales' 
       })),
-      ...filteredExpenses.map(e => ({ 
-        id: e.id, date: e.date, desc: e.description, amount: e.amount, type: 'OUT' as const, category: e.category 
-      })),
-      ...filteredSupplierTx.map(t => ({
-        id: t.id, date: t.date, desc: `Supplier: ${t.supplierName}`, amount: t.amount, type: 'OUT' as const, category: 'Inventory'
+      ...filteredExpenses.map(e => ({
+        id: e.id, date: e.date, desc: e.description, amount: e.amount, type: 'OUT' as const, category: e.category
       })),
       ...filteredExchanges.map(e => ({
         id: e.id, date: e.date, desc: `Exchange #${e.exchangeNumber}${e.originalInvoiceNumber ? ` (Sale #${e.originalInvoiceNumber})` : ''}: ${e.description || 'Product exchange'}`, amount: Math.abs(e.difference), type: (e.difference >= 0 ? 'IN' : 'OUT') as 'IN' | 'OUT', category: 'Exchange'
       }))
     ];
     return all.sort((a, b) => parseBusinessDate(b.date).getTime() - parseBusinessDate(a.date).getTime());
-  }, [filteredSales, filteredExpenses, filteredSupplierTx, filteredExchanges]);
+  }, [filteredSales, filteredExpenses, filteredExchanges]);
 
 
   return (
@@ -235,7 +269,7 @@ const Accounting: React.FC = () => {
                   <div>
                     <p className="text-sm font-medium text-slate-500">Total Expenses</p>
                     <h3 className="text-2xl font-bold text-rose-600 mt-1">LKR {totalExpenses.toLocaleString()}</h3>
-                    <p className="text-xs text-slate-400 mt-1">Ops: LKR {totalOperatingExpenses.toLocaleString()} | Stock: LKR {totalSupplierPayments.toLocaleString()}{exchangeRefunds > 0 ? ` | Refunds: LKR ${exchangeRefunds.toLocaleString()}` : ''}</p>
+                    <p className="text-xs text-slate-400 mt-1">Ops: LKR {totalOperatingExpenses.toLocaleString()}{exchangeRefunds > 0 ? ` | Refunds: LKR ${exchangeRefunds.toLocaleString()}` : ''}</p>
                   </div>
                   <div className="p-2 bg-rose-50 rounded-lg text-rose-600"><TrendingDown size={20} /></div>
                 </div>
@@ -486,7 +520,7 @@ const Accounting: React.FC = () => {
         <ConfirmDialog
           title="Delete Expense"
           message={`Are you sure you want to delete "${deleteConfirm.desc}"? This action cannot be undone.`}
-          onConfirm={() => { deleteExpense(deleteConfirm.id); setDeleteConfirm(null); }}
+          onConfirm={() => { deleteExpense(deleteConfirm.id); setLocalExpenses(prev => prev.filter(x => x.id !== deleteConfirm.id)); setDeleteConfirm(null); }}
           onCancel={() => setDeleteConfirm(null)}
         />
       )}

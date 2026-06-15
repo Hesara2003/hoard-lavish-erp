@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, Plus, Phone, Mail, Edit2, Trash2, X, Search, ChevronLeft, ShoppingBag, Star, Calendar } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { Customer } from '../types';
+import { fetchSales } from '../services/supabaseService';
+import { Customer, SalesRecord } from '../types';
 import { parseBusinessDate } from '../utils/dateTime';
 import { fmtCurrency } from '../utils/formatters';
 import ConfirmDialog from './shared/ConfirmDialog';
 
 const Customers: React.FC = () => {
-  const { customers, addCustomer, updateCustomer, deleteCustomer, salesHistory, currentUser } = useStore();
+  const { customers, addCustomer, updateCustomer, deleteCustomer, loadCustomers, refreshCustomers, currentUser } = useStore();
   const isCashier = currentUser?.role === 'CASHIER';
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeView, setActiveView] = useState<'LIST' | 'PROFILE'>('LIST');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -18,6 +20,8 @@ const Customers: React.FC = () => {
   const [editingCustomer, setEditingCustomer] = useState<Partial<Customer>>({});
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
 
+  useEffect(() => { loadCustomers(); }, []);
+
   // Filtered List
   const filteredCustomers = customers.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -25,8 +29,16 @@ const Customers: React.FC = () => {
     c.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Customer Profile Calculations
-  const customerHistory = salesHistory.filter(s => s.customerId === selectedCustomer?.id);
+  // Customer Profile Calculations — lazy loaded on profile open
+  const [customerHistory, setCustomerHistory] = useState<SalesRecord[]>([]);
+
+  useEffect(() => {
+    if (!selectedCustomer) { setCustomerHistory([]); return; }
+    fetchSales({ customerId: selectedCustomer.id, limit: 200 })
+      .then(setCustomerHistory)
+      .catch(err => console.error('Failed to load customer sales', err));
+  }, [selectedCustomer?.id]);
+
   const lastVisit = customerHistory.length > 0
     ? parseBusinessDate(customerHistory[0].date).toLocaleDateString()
     : 'Never';
@@ -93,13 +105,28 @@ const Customers: React.FC = () => {
             </div>
           </div>
 
-          {activeView === 'LIST' && !isCashier && (
-            <button
-              onClick={() => { setEditingCustomer({}); setIsModalOpen(true); }}
-              className="bg-slate-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium"
-            >
-              <Plus size={16} /> Add Customer
-            </button>
+          {activeView === 'LIST' && (
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setIsRefreshing(true);
+                  await refreshCustomers();
+                  setIsRefreshing(false);
+                }}
+                disabled={isRefreshing}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
+              {!isCashier && (
+                <button
+                  onClick={() => { setEditingCustomer({}); setIsModalOpen(true); }}
+                  className="bg-slate-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium"
+                >
+                  <Plus size={16} /> Add Customer
+                </button>
+              )}
+            </div>
           )}
 
           {activeView === 'PROFILE' && selectedCustomer && !isCashier && (
