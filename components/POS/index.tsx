@@ -977,6 +977,7 @@ const POS: React.FC = () => {
       const exchange = completeExchange({
         originalSaleId: selectedExchangeSale?.id,
         originalInvoiceNumber: selectedExchangeSale?.invoiceNumber,
+        originalSale: selectedExchangeSale ?? undefined,
         returnedItems: allReturned,
         newItems: exchangeNewItemsPriced,
         returnedTotal,
@@ -994,7 +995,7 @@ const POS: React.FC = () => {
 
       // If sale should be voided, do it after exchange is created
       if (shouldVoidSale && selectedExchangeSale) {
-        deleteSale(selectedExchangeSale.id);
+        deleteSale(selectedExchangeSale.id).catch(console.error);
       }
 
       setLastExchange(exchange);

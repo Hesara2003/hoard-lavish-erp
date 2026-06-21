@@ -80,6 +80,9 @@ const Dashboard: React.FC = () => {
   const [isEditInvoiceOpen, setIsEditInvoiceOpen] = useState(false);
   const [lastEditedSale, setLastEditedSale] = useState<SalesRecord | null>(null);
   const [deleteSaleConfirm, setDeleteSaleConfirm] = useState<SalesRecord | null>(null);
+  const [voidLoading, setVoidLoading] = useState(false);
+  const [voidSuccess, setVoidSuccess] = useState<string | null>(null);
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   // --- Helpers ---
   const matchesDate = (dateString: string, targetDate: string) => dateString.startsWith(targetDate);
@@ -705,7 +708,7 @@ const Dashboard: React.FC = () => {
 
   const handleUpdateSale = () => {
     if (!editingSale || editCart.length === 0) return;
-    const updatedSale = updateSale(editingSale.id, editCart, editDiscount, editCustomerId);
+    const updatedSale = updateSale(editingSale, editCart, editDiscount, editCustomerId);
     setLastEditedSale(updatedSale);
     setIsEditInvoiceOpen(true);
     setEditingSale(null);
@@ -723,10 +726,21 @@ const Dashboard: React.FC = () => {
     setTimeout(() => setIsEditInvoiceOpen(false), 500);
   };
 
-  const handleDeleteSale = () => {
-    if (!deleteSaleConfirm) return;
-    deleteSale(deleteSaleConfirm.id);
-    setDeleteSaleConfirm(null);
+  const handleDeleteSale = async () => {
+    if (!deleteSaleConfirm || voidLoading) return;
+    const invoiceNumber = deleteSaleConfirm.invoiceNumber;
+    setVoidLoading(true);
+    setVoidError(null);
+    try {
+      await deleteSale(deleteSaleConfirm.id);
+      setDeleteSaleConfirm(null);
+      setVoidSuccess(`Invoice #${invoiceNumber} voided successfully.`);
+      setTimeout(() => setVoidSuccess(null), 5000);
+    } catch (err) {
+      setVoidError(err instanceof Error ? err.message : 'Failed to void sale. Please try again.');
+    } finally {
+      setVoidLoading(false);
+    }
   };
 
   const editCartSubtotal = editCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -1429,6 +1443,17 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* VOID SUCCESS TOAST */}
+      {voidSuccess && (
+        <div className="mb-4 flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 shadow-sm">
+          <svg className="w-5 h-5 flex-shrink-0 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          <span className="text-sm font-medium">{voidSuccess}</span>
+          <button onClick={() => setVoidSuccess(null)} className="ml-auto text-emerald-500 hover:text-emerald-700">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* EDIT RECENT SALES */}
       <div className="mb-8">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1497,7 +1522,7 @@ const Dashboard: React.FC = () => {
 
       {/* DELETE CONFIRM MODAL */}
       {deleteSaleConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDeleteSaleConfirm(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { setDeleteSaleConfirm(null); setVoidError(null); }}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -1507,21 +1532,34 @@ const Dashboard: React.FC = () => {
               <p className="text-sm text-slate-600 mb-2">
                 You are about to void <span className="font-bold">Invoice #{deleteSaleConfirm.invoiceNumber}</span>.
               </p>
-              <p className="text-sm text-slate-600 mb-6">
+              <p className="text-sm text-slate-600 mb-4">
                 This will restore stock for all {deleteSaleConfirm.items.length} item(s) and remove the sale permanently.
               </p>
+              {voidError && (
+                <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-sm">
+                  <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span>{voidError}</span>
+                </div>
+              )}
               <div className="flex gap-3">
                 <button
-                  onClick={() => setDeleteSaleConfirm(null)}
-                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-medium transition-colors text-sm"
+                  onClick={() => { setDeleteSaleConfirm(null); setVoidError(null); }}
+                  disabled={voidLoading}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-medium transition-colors text-sm disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleDeleteSale}
-                  className="flex-1 py-2.5 bg-red-500 text-white rounded-xl hover:bg-red-600 font-bold transition-colors text-sm"
+                  onClick={() => { void handleDeleteSale(); }}
+                  disabled={voidLoading}
+                  className="flex-1 py-2.5 bg-red-500 text-white rounded-xl hover:bg-red-600 font-bold transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Void Bill
+                  {voidLoading ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                      Voiding…
+                    </>
+                  ) : 'Void Bill'}
                 </button>
               </div>
             </div>

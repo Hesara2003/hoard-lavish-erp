@@ -72,10 +72,10 @@ interface StoreContextType {
     customerId?: string,
     paymentBreakdown?: { cashAmount?: number; cardAmount?: number }
   ) => SalesRecord;
-  updateSale: (saleId: string, updatedItems: CartItem[], discount: number, customerId?: string) => SalesRecord;
-  deleteSale: (saleId: string) => void;
+  updateSale: (originalSale: SalesRecord, updatedItems: CartItem[], discount: number, customerId?: string) => SalesRecord;
+  deleteSale: (saleId: string) => Promise<void>;
   refreshSalesHistory: (options?: import('../services/db/sales').FetchSalesOptions) => Promise<void>;
-  completeExchange: (exchange: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'>) => ExchangeRecord;
+  completeExchange: (exchange: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'> & { voidSaleId?: string; originalSale?: SalesRecord }) => ExchangeRecord;
   adjustStock: (productId: string, quantity: number, type: 'IN' | 'OUT' | 'ADJUSTMENT', reason: string) => StockMovement | null;
   transferStock: (toBranchId: string, items: StockTransferItem[], notes: string) => StockTransfer;
   deleteTransfer: (transferId: string) => void;
@@ -1139,12 +1139,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ============================================================
   // UPDATE SALE (for editing recent sales within 10 minutes)
   // ============================================================
-  const updateSale = (saleId: string, updatedItems: CartItem[], discount: number, customerId?: string): SalesRecord => {
-    const originalSale = salesHistory.find(s => s.id === saleId);
-    if (!originalSale) {
-      throw new Error('Sale not found');
-    }
-
+  const updateSale = (originalSale: SalesRecord, updatedItems: CartItem[], discount: number, customerId?: string): SalesRecord => {
     const customer = customers.find(c => c.id === customerId);
     const { subtotal, tax, total, totalCost, discount: effDiscount } = calculateCartTotals(updatedItems, discount, 0);
 
@@ -1236,7 +1231,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setStockHistory(prev => [...newStockLogs, ...prev]);
     setProducts(newProducts);
-    setSalesHistory(prev => prev.map(s => s.id === saleId ? updatedSale : s));
+    setSalesHistory(prev => prev.map(s => s.id === originalSale.id ? updatedSale : s));
 
     // Persist to Supabase
     void executeWithOfflineQueue(
@@ -1249,14 +1244,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return updatedSale;
   };
 
-  const deleteSale = (saleId: string): void => {
+  const deleteSale = async (saleId: string): Promise<void> => {
+    if (useSupabase) {
+      // The sale lives in Supabase — no need to find it in local state.
+      // Throws on any failure so the caller can surface the error.
+      await db.voidSaleRPC(saleId);
+      await refreshFromSupabase();
+      return;
+    }
+
     const sale = salesHistory.find(s => s.id === saleId);
     if (!sale) return;
 
+    // Local-only mode: optimistic update
     const today = new Date();
     const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-    // Restore stock for every item in the deleted sale
     const newStockLogs: StockMovement[] = [];
     const newProducts = products.map(p => {
       const soldItem = sale.items.find(i => i.id === p.id);
@@ -1281,7 +1284,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return p;
     });
 
-    // Reverse customer loyalty points
     if (sale.customerId) {
       setCustomers(prev => prev.map(c =>
         c.id === sale.customerId
@@ -1293,31 +1295,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setStockHistory(prev => [...newStockLogs, ...prev]);
     setProducts(newProducts);
     setSalesHistory(prev => prev.filter(s => s.id !== saleId));
-
-    if (useSupabase) {
-      void executeWithOfflineQueue(
-        'DELETE_SALE',
-        { saleId },
-        async () => {
-          await db.voidSaleRPC(saleId);
-          await refreshFromSupabase();
-        },
-        { fallback: 'Failed to void sale' }
-      );
-    }
   };
 
   // ============================================================
   // EXCHANGE
   // ============================================================
-  const completeExchange = (exchangeData: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'> & { voidSaleId?: string }): ExchangeRecord => {
+  const completeExchange = (exchangeData: Omit<ExchangeRecord, 'id' | 'exchangeNumber' | 'date' | 'branchId' | 'branchName'> & { voidSaleId?: string; originalSale?: SalesRecord }): ExchangeRecord => {
     const exchangeNumber = `EX-${Date.now().toString(36).toUpperCase()}`;
     const today = new Date();
     const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     // Guard: prevent over-return against original sale lines across previous exchanges.
     if (exchangeData.originalSaleId) {
-      const originalSale = salesHistory.find(s => s.id === exchangeData.originalSaleId);
+      const originalSale = exchangeData.originalSale ?? salesHistory.find(s => s.id === exchangeData.originalSaleId);
       if (!originalSale) {
         throw new Error('Original sale could not be found for this exchange.');
       }
