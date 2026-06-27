@@ -46,6 +46,7 @@ type ListItem =
   | { recordType: 'sale'; data: SalesRecord }
   | { recordType: 'exchange'; data: ExchangeRecord };
 
+// v1.1.44
 const SalesHistory: React.FC = () => {
   const { exchangeHistory, branches, products, currentUser } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
